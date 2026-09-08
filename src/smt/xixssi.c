@@ -783,7 +783,7 @@ MODULE store_document_name_in_result (THREAD *thread)
 
     /* Get simple file name (remove full path)                               */
     file = strrchr (tcb-> file_name, '/');
-    file = (file)? file++: tcb-> file_name;
+    file = (file)? file + 1: tcb-> file_name;
 
     tcb-> command-> result = mem_strdup (file);
     if (tcb-> command-> result)

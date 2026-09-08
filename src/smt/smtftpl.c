@@ -625,11 +625,11 @@ ftpc_return_message (FTP_CONTROL_CTX *p_ftpc, char *buffer)
             break;
 
         case FTP_RC_FILE_STATUS:
-            sprintf (buffer + 4, "%ld\r\n", p_ftpc-> file_size);
+            sprintf (buffer + 4, "%u\r\n", p_ftpc-> file_size);
             break;
 
         case FTP_RC_FILE_ACTION_PENDING:
-            sprintf (buffer + 4, "Restarting from %ld\r\n",
+            sprintf (buffer + 4, "Restarting from %u\r\n",
                      p_ftpc-> file_offset);
             break;
 
@@ -729,7 +729,7 @@ gslgen_message_buffer (
     xml_put_attr (xml_switches, "date", conv_date_pict (date_now (), "yyyy/mm/dd"));
     xml_put_attr (xml_switches, "time", conv_time_pict (time_now (), "hh:mm:ss"));
     
-    sprintf (work_buffer, "%ld", ftp_connects);
+    sprintf (work_buffer, "%u", ftp_connects);
     return_code = ftp_response [p_ftpc-> return_code].code;
     xml_put_attr (root_item, "curusers", work_buffer);
     xml_put_attr (root_item, "maxusers", CONFIG ("ftp:limit"));
@@ -800,11 +800,11 @@ add_xml_environment (FTP_CONTROL_CTX *p_ftpc, XML_ITEM *root)
     SETXML ("remote_host",     socket_peeraddr (p_ftpc-> socket));
     SETXML ("remote_addr",     socket_peeraddr (p_ftpc-> socket));
     SETXML ("use_quotas",      p_ftpc-> use_quotas? "1": "0");
-    sprintf (work_buffer, "%ld", p_ftpc-> soft_quota);
+    sprintf (work_buffer, "%u", p_ftpc-> soft_quota);
     SETXML ("soft_quota",      work_buffer);
-    sprintf (work_buffer, "%ld", p_ftpc-> hard_quota);
+    sprintf (work_buffer, "%u", p_ftpc-> hard_quota);
     SETXML ("hard_quota",      work_buffer);
-    sprintf (work_buffer, "%ld", p_ftpc-> cur_usage);
+    sprintf (work_buffer, "%u", p_ftpc-> cur_usage);
     SETXML ("disk_usage",      work_buffer);
 }
 

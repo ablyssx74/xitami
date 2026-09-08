@@ -1591,14 +1591,14 @@ get_new_filename (
     const char *filename)
 {
     char
-        suffix [8],
+        suffix [16],
         *new_name;
     int
         counter;
 
     for (counter = 0; ; counter++)
       {
-        sprintf (suffix, "_%03d", counter);
+        snprintf (suffix, sizeof (suffix), "_%03d", counter);
         new_name = xstrcpy (NULL, filename, suffix, NULL);
         if (!file_exists (new_name))
             return (new_name);
@@ -2353,7 +2353,7 @@ get_tmp_file_name (const char *path, qbyte *index, const char *ext)
     do
       {
         mem_strfree (&filename);
-        sprintf (index_str, "%08lX", *index);
+        sprintf (index_str, "%08X", *index);
         if (path)
             filename = xstrcpy (NULL, path, "/", index_str, ".", ext, NULL);
         else

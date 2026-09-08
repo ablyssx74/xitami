@@ -1449,9 +1449,9 @@ static char *
 get_queue_name (const QID *qid)
 {
     static
-      char queue_name [15];           /*  Queue number is 32-bit value     */
-
-    sprintf (queue_name, "q~%09ld", qid-> ident);
+      char queue_name [32];           /*  'ident' is a 'long': big enough  */
+                                       /*  for a full 64-bit value + sign  */
+    snprintf (queue_name, sizeof (queue_name), "q~%09ld", qid-> ident);
     return (queue_name);
 }
 

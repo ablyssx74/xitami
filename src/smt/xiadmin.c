@@ -986,7 +986,7 @@ set_config_key (const char *prefix, const char *name)
     if (strchr (name, ':'))
         strcpy (config_key, name);
     else
-        sprintf (config_key, "%s:%s", prefix, name);
+        snprintf (config_key, sizeof (config_key), "%s:%s", prefix, name);
 }
 
 
@@ -2469,7 +2469,7 @@ MODULE open_config_user_list (THREAD *thread)
     set_form_focus (&config_users_form);
 
     /*  We save, then delete 'webmask' and 'realm' from the user list        */
-    sprintf (config_key, "%swebmask", resource_full);
+    snprintf (config_key, sizeof (config_key), "%swebmask", resource_full);
     symbol = sym_lookup_symbol (passwd_table, config_key);
     if (symbol)
       {
@@ -2479,7 +2479,7 @@ MODULE open_config_user_list (THREAD *thread)
     else
         strclr (webmask);
 
-    sprintf (config_key, "%srealm", resource_full);
+    snprintf (config_key, sizeof (config_key), "%srealm", resource_full);
     symbol = sym_lookup_symbol (passwd_table, config_key);
     if (symbol)
       {
@@ -3604,7 +3604,7 @@ MODULE validate_vhost_definition (THREAD *thread)
     if (strused (data-> host_file)
     &&  strchr  (data-> host_file, '.'))
         *strchr (data-> host_file, '.') = '\0';
-    sprintf (config_full, "%s.cfg", data-> host_file);
+    snprintf (config_full, sizeof (config_full), "%s.cfg", data-> host_file);
 
     /*  Create virtual-host directories if necessary - ignore errors         */
     if (*data-> makedirs == '1')

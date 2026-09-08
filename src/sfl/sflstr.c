@@ -1383,7 +1383,8 @@ searchreplace (
        if (offset)
          {
            strbase = (offset + strlen (strtoins));
-           strcpy (offset, (offset + strlen (strtofnd)));
+           memmove (offset, (offset + strlen (strtofnd)),
+                     strlen (offset + strlen (strtofnd)) + 1);
            memmove (offset + strlen (strtoins),
                      offset, strlen (offset) + 1);
            memcpy (offset, strtoins, strlen (strtoins));
@@ -1425,7 +1426,8 @@ deletestring (
             offset = strstr (strbuf, strtodel);
         if (offset)
           {
-            strcpy (offset, (offset + strlen (strtodel)));    /* NO OVERRUN */
+            memmove (offset, (offset + strlen (strtodel)),    /* NO OVERRUN */
+                     strlen (offset + strlen (strtodel)) + 1);
           }
         else
             break;
@@ -2044,7 +2046,8 @@ istoken (
        if (!isalpha ((int)cChar)&& cChar != '_')
          {
            iRet = *iWasToken = 1;
-           strcpy (*strLine, (*strLine + strlen (strtoken)));
+           memmove (*strLine, (*strLine + strlen (strtoken)),
+                    strlen (*strLine + strlen (strtoken)) + 1);
          }
        else
            iRet = *iWasToken = 0;
@@ -2237,7 +2240,8 @@ isoneoftokens (
                if (!isalpha ((int)cChar)&& cChar != '_')
                  {
                    *iWasToken = cnt + 1;
-                   strcpy (*strbuf, (*strbuf + strlen (strtemp)));
+                   memmove (*strbuf, (*strbuf + strlen (strtemp)),
+                            strlen (*strbuf + strlen (strtemp)) + 1);
 
                    nstate = cnt + 1;
                  }
@@ -2252,7 +2256,8 @@ isoneoftokens (
                     if (!isalpha ((int)cChar)&& cChar != '_')
                       {
                         *iWasToken = cnt + 1;
-                        strcpy (*strbuf, (*strbuf + strlen (strtemp)));
+                        memmove (*strbuf, (*strbuf + strlen (strtemp)),
+                                 strlen (*strbuf + strlen (strtemp)) + 1);
 
                         nstate = cnt + 1;
                       }

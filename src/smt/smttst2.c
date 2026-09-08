@@ -133,7 +133,8 @@ time_str (void)
     time_secs   = time (NULL);
     time_struct = localtime (&time_secs);
 
-    sprintf (formatted_time, "%2d/%02d/%02d %2d:%02d:%02d",
+    snprintf (formatted_time, sizeof (formatted_time),
+                              "%2d/%02d/%02d %2d:%02d:%02d",
                               time_struct-> tm_year % 100,
                               time_struct-> tm_mon + 1,
                               time_struct-> tm_mday,
