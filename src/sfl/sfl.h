@@ -24,6 +24,7 @@
     Version:    2.04
     <TABLE>
     2.04_PH     Added BeOS support
+    2.04_KB     Added Haiku support
     2.02_PH     Released with SFL 2.02
     </TABLE>
 
@@ -75,6 +76,7 @@
  *  __UTYPE_DECALPHA    Digital UNIX (Alpha)
  *  __UTYPE_IBMAIX      IBM RS/6000 AIX
  *  __UTYPE_FREEBSD     FreeBSD
+ *  __UTYPE_HAIKU       Haiku
  *  __UTYPE_HPUX        HP/UX
  *  __UTYPE_LINUX       Linux
  *  __UTYPE_MIPS        MIPS (BSD 4.3/System V mixture)
@@ -95,7 +97,9 @@
  *  __VMS_XOPEN         Supports XOPEN functions
  */
 
-#if (defined (__64BIT__))               /*  EDM 96/05/30                     */
+#if (defined (__64BIT__) || defined (__LP64__) || defined (_LP64) \
+ || defined (__x86_64__) || defined (__amd64__) || defined (__aarch64__) \
+ || defined (__ppc64__) || defined (__powerpc64__) || defined (__ia64__))
 #    define __IS_64BIT__                /*  May have 64-bit OS/compiler      */
 #else
 #    define __IS_32BIT__                /*  Else assume 32-bit OS/compiler   */
@@ -173,6 +177,15 @@
 #   define __UNIX__
 #elif (defined (__BEOS__))
 #   define __UTYPE_BEOS
+#   define __UNIX__
+#elif (defined (__HAIKU__))
+    /*  Haiku is BeOS-compatible but, unlike BeOS, has a fully POSIX BSD-
+     *  socket network stack integrated into the normal file descriptor
+     *  table (no special socket numbering, read()/write()/select()/
+     *  fcntl() all work on sockets, getsockopt() is complete, etc).  So
+     *  we treat it as a normal UNIX system rather than reusing the
+     *  __UTYPE_BEOS work-arounds elsewhere in this library.               */
+#   define __UTYPE_HAIKU
 #   define __UNIX__
 #elif (defined (__hpux))
 #   define __UTYPE_HPUX
@@ -302,7 +315,8 @@
 #       endif
 #   endif
 /*  Specific #include's for UNIX varieties                                   */
-#   if (defined (__UTYPE_IBMAIX) || defined(__UTYPE_QNX))
+#   if (defined (__UTYPE_IBMAIX) || defined(__UTYPE_QNX) \
+    || defined (__UTYPE_HAIKU))
 #       include <sys/select.h>
 #   endif
 #endif
@@ -581,6 +595,11 @@ void  sys_assert  (const char *filename, unsigned line_number);
 #   undef  TIMEZONE
 #   define TIMEZONE 0                   /*  timezone is not available        */
 
+#elif (defined (__UTYPE_HAIKU))
+#   undef  TIMEZONE
+#   define TIMEZONE 0                   /*  no global 'timezone' variable;   */
+                                         /*  BSD-derived libc, like NetBSD    */
+
 #elif (defined (__VMS__))
     /*  This data structure is often used in OpenVMS library functions       */
     typedef struct {                    /*  Fixed-string descriptor:         */
@@ -699,6 +718,8 @@ void  sys_assert  (const char *filename, unsigned line_number);
 #elif (defined (__UTYPE_SCO))
 #   define DOES_SNPRINTF
 #elif (defined (__UTYPE_LINUX))
+#   define DOES_SNPRINTF
+#elif (defined (__UTYPE_HAIKU))
 #   define DOES_SNPRINTF
 #else
 #   undef DOES_SNPRINTF
@@ -3014,6 +3035,9 @@ typedef qbyte sock_t;                   /*  Use sock_t for all sockets       */
 #if (defined (__GLIBC__) && (__GLIBC__ > 1))
 typedef socklen_t  argsize_t;           /*  GNU libc: size arg for sock func */
 
+#elif (defined (__UTYPE_HAIKU))
+typedef socklen_t  argsize_t;           /*  Haiku: size arg for sock func    */
+
 #elif (defined (__VMS__) && !defined (vaxc))
 typedef unsigned int argsize_t;         /*  OpenVMS: size arg for sock func  */
 
@@ -3584,6 +3608,8 @@ typedef struct {
 /*  getdtablesize () is not available on all systems                         */
 #if (defined (__UNIX__))
 #   if (defined (__UTYPE_UNIXWARE))
+#       define FILEHANDLE_MAX   sysconf (_SC_OPEN_MAX)
+#   elif (defined (__UTYPE_HAIKU))          /*  No getdtablesize() on Haiku   */
 #       define FILEHANDLE_MAX   sysconf (_SC_OPEN_MAX)
 #   elif (defined (__UTYPE_HPUX))
 #       define FILEHANDLE_MAX   FD_SETSIZE
