@@ -68,6 +68,9 @@ typedef qbyte sock_t;                   /*  Use sock_t for all sockets       */
 #if (defined (__GLIBC__) && (__GLIBC__ > 1))
 typedef socklen_t  argsize_t;           /*  GNU libc: size arg for sock func */
 
+#elif (defined (__UTYPE_HAIKU))
+typedef socklen_t  argsize_t;           /*  Haiku: size arg for sock func    */
+
 #elif (defined (__VMS__) && !defined (vaxc))
 typedef unsigned int argsize_t;         /*  OpenVMS: size arg for sock func  */
 

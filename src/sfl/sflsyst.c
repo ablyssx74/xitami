@@ -136,6 +136,8 @@ sys_name (Bool full)
         return ("UNIX Type: Sun Solaris");
 #   elif (defined (__UTYPE_UNIXWARE))
         return ("UNIX Type: SCO UNIXWare");
+#   elif (defined (__UTYPE_HAIKU))
+        return ("UNIX Type: Haiku");
 #   else
         return ("UNIX Type: Generic");
 #   endif

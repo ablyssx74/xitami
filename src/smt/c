@@ -117,7 +117,7 @@ LIBNAME="${SAVED_LIBNAME:-${LIBNAME}}"
 #
 #       AIX      APOLLO   A/UX     BSD/OS    FreeBSD   HP-UX    IRIX
 #       Linux    NCR      NetBSD   NEXT      OSF1      SCO      Pyramid
-#       SunOS    ULTRIX   OS/2     UnixWare  Generic   SINIX-N  BeOS
+#       SunOS    ULTRIX   OS/2     UnixWare  Generic   SINIX-N  BeOS      Haiku
 #
 #   Sets the variable UTYPE to one of the UNIX system names above, and
 #   CCOPTS to the appropriate compiler options for ANSI C compilation.
@@ -289,6 +289,22 @@ if [ -z "$CCOPTS" ]; then
                 ;;
         esac
         
+    elif [ "$UTYPE" = "Haiku" ]; then
+        #  Haiku 64-bit nightly: modern gcc, POSIX sockets in libnetwork.
+        STDLIBS="-lnetwork -lm"
+        CCNAME="${CCNAME:-gcc}"             #   Use gcc if not set
+        case "$CCPRODLEVEL" in
+            debug)
+                CCOPTS="-g -Wall"
+                ;;
+            standard)
+                CCOPTS="-O2 -Wall"
+                ;;
+            production)
+                CCOPTS="-s -O2 -Wall"
+                ;;
+        esac
+
     fi
 fi
 

@@ -123,6 +123,8 @@ typedef struct {
 #if (defined (__UNIX__))
 #   if (defined (__UTYPE_UNIXWARE))
 #       define FILEHANDLE_MAX   sysconf (_SC_OPEN_MAX)
+#   elif (defined (__UTYPE_HAIKU))          /*  No getdtablesize() on Haiku   */
+#       define FILEHANDLE_MAX   sysconf (_SC_OPEN_MAX)
 #   elif (defined (__UTYPE_HPUX))
 #       define FILEHANDLE_MAX   FD_SETSIZE
 #   elif (defined (__UTYPE_SINIX))
