@@ -130,7 +130,7 @@ static char *
 time_str (void)
 {
     static char
-        formatted_time [18];
+        formatted_time [24];
     time_t
         time_secs;
     struct tm
@@ -139,7 +139,8 @@ time_str (void)
     time_secs   = time (NULL);
     time_struct = localtime (&time_secs);
 
-    sprintf (formatted_time, "%4d/%02d/%02d %2d:%02d:%02d",
+    snprintf (formatted_time, sizeof (formatted_time),
+                              "%4d/%02d/%02d %2d:%02d:%02d",
                               time_struct-> tm_year + 1900,
                               time_struct-> tm_mon + 1,
                               time_struct-> tm_mday,
