@@ -499,7 +499,7 @@ for i in $*; do
     FILENAME=`echo $i | cut -d"." -f1`
 
     #   Precompilation is required if program contains 'EXEC SQL'
-    egrep -- "EXEC SQL" $FILENAME.c >/dev/null
+    grep -E -- "EXEC SQL" $FILENAME.c >/dev/null
     if [ $? -eq 0 ]; then
         PRECOMPILE=yes
     else
