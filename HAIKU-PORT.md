@@ -1,7 +1,19 @@
-# Porting Xitami to Haiku (64-bit nightly)
+# Porting Xitami to Haiku
 
 This is a working log for porting/building the Xitami web server (and its
-iMatix SFL/SMT/GSL support libraries) on Haiku's x86_64 nightly builds.
+iMatix SFL/SMT/GSL support libraries) on Haiku's nightly builds.
+
+## Status: confirmed working
+
+- Builds cleanly with `./xibuild` on **Haiku x86_64 (64-bit) nightly** and
+  on **Haiku 32-bit nightly**.
+- FTP (control + data connections) has been tested and works on the 64-bit
+  build.
+- The speculative fallback plans below (`__STRICT_ANSI__`, `seteuid`/
+  `setegid`, `-lnetwork`) all turned out to be unnecessary — the port as
+  written just worked on both real Haiku targets. Left the section in place
+  as a record of the reasoning, in case a future Haiku libc/gcc change ever
+  makes one of them relevant again.
 
 ## Why this was mostly a small, targeted change
 
@@ -62,15 +74,50 @@ those BeOS workarounds.
 **Everything else** (smt, cgi-src, addons, gsl's own sources) needed no
 changes — they should build as soon as SFL does.
 
-## Things I could not verify without a real Haiku machine
+## Bugs found along the way
 
-I have no Haiku toolchain in this environment (Linux/gcc only), so the above
-is a careful *static* port based on documented Haiku/BeOS differences, plus
-compiling every `sfl/*.c` file both normally and with `-D__HAIKU__` under
-Linux's headers as a syntax/regression sanity check (that only catches typos
-in the `#ifdef` logic, not missing/different Haiku symbols). Please build on
-a real Haiku nightly and report back whatever fails — likely early
-candidates, roughly in order of likelihood:
+A full build (`./xibuild` on real Haiku, both 32- and 64-bit) surfaces GCC
+13's `-Wall` diagnostics against 1996-2000-era C for the first time. Most of
+those are cosmetic (unused variables, ambiguous-`else` style notes), but a
+few were real, pre-existing bugs — mostly not Haiku-specific, but worth
+knowing about if you're running this fork:
+
+- **`sflcryp.c`**: `crypt_data()`'s `CRYPT_MDC` branch copied an
+  uninitialized local into the output instead of the buffer
+  `mdc_encrypt()`/`mdc_decrypt()` actually wrote to — MDC encrypt/decrypt
+  silently produced garbage. Nothing to do with Haiku; plain logic bug.
+- **`xixssi.c`**: the SSI `DOCUMENT_NAME` variable included a leading `/` it
+  shouldn't have (`file++` where `file + 1` was intended).
+- **`smtftpd.c`**: FTP data-connection child-thread event routing read a
+  4-byte wire value into a `long` — harmless on the 32-bit systems this code
+  ran on for 25 years, but on any 64-bit UNIX (Haiku included) it left half
+  the value uninitialized. This is the one genuinely 64-bit-specific bug in
+  the list, and exactly the kind of thing porting to 64-bit is for.
+- A cluster of `%ld`-vs-`qbyte` format-string mismatches (FTP `SIZE`/`REST`
+  replies, DNS debug dumps, request logging, directory-listing temp
+  filenames) that only became *visible* once `qbyte` was correctly fixed to
+  32 bits (see above) — before that fix they accidentally lined up because
+  `qbyte` was itself wrongly 8 bytes wide on 64-bit builds.
+- A few buffer-overflow-class `sprintf` calls (an admin-form-driven one in
+  `xiadmin.c`, a pipe-temp-filename counter that overflowed every 10,000
+  requests, a couple of `long`-sized values into buffers only sized for
+  32-bit `long`) switched to `snprintf`/widened.
+- Four `strcpy(dst, dst + n)` self-overlapping calls in `sflstr.c` (technically
+  undefined behavior, though harmless with a naive forward-copying `strcpy`)
+  switched to `memmove`.
+
+## Things that were speculative before real-hardware testing
+
+I had no Haiku toolchain in the environment where this port was written
+(Linux/gcc only), so it started as a careful *static* port based on
+documented Haiku/BeOS differences, sanity-checked only by compiling every
+`sfl/*.c` file both normally and with `-D__HAIKU__` under Linux's headers
+(that only catches typos in the `#ifdef` logic, not missing/different Haiku
+symbols). It has since built and run successfully on real Haiku 32-bit and
+64-bit nightlies, with FTP confirmed working on 64-bit — none of the
+fallbacks below were needed, but they're kept here as a record of the
+reasoning and a starting point if a future Haiku release ever changes one of
+these:
 
 1. **`__STRICT_ANSI__`**. `prelude.h` defines this for any GCC-based
    `__UNIX__` target (this predates Haiku and already applies to Linux) to
