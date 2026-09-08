@@ -1880,7 +1880,7 @@ gslgen_error_buffer (HTTP_CONTEXT *p_http, char *result)
         *file_descr;
 
     /*  Get temporary filename for error-message output                      */
-    sprintf (buffer, "err%05ld", p_http-> socket);
+    sprintf (buffer, "err%05u", p_http-> socket);
     filename = mem_strdup (
                file_where ('s', HCONFIG ("server:temp-dir"), buffer, "htm"));
 
@@ -2094,7 +2094,7 @@ http_list_directory (
         *delimiter,                     /*  / delimiter in URL               */
         *filename_url,                  /*  Filename after hex escaping      */
         saved_char,                     /*  Character following slash        */
-        size_string [20];
+        size_string [24];
 
     /*  Load directory listing                                               */
     if (p_http-> url_param
@@ -2169,7 +2169,7 @@ http_list_directory (
             else
                 extension = "";
         
-            sprintf (size_string, "%ld", file_size);
+            snprintf (size_string, sizeof (size_string), "%ld", file_size);
             xml_put_attr (file_item, "size",  size_string);
             xml_put_attr (file_item, "units", size_units);
             xml_put_attr (file_item, "type",  extension);
@@ -2188,15 +2188,15 @@ http_list_directory (
         *delimiter = saved_char;
       }
     xml_put_attr (root_item, "script",  HCONFIG ("server:dir-script"));
-    sprintf (size_string, "%ld", total_files);
+    snprintf (size_string, sizeof (size_string), "%ld", total_files);
     xml_put_attr (root_item, "files",   size_string);
-    sprintf (size_string, "%ld", total_size);
+    snprintf (size_string, sizeof (size_string), "%ld", total_size);
     xml_put_attr (root_item, "size",    size_string);
     xml_put_attr (root_item, "order",   sortopt);
     xml_put_attr (root_item, "urlbase", p_http-> url);
 
     /*  Get temporary filename for HTML directory listing                    */
-    sprintf (buffer, "/tmp%05ld", p_http-> socket);
+    sprintf (buffer, "/tmp%05u", p_http-> socket);
     mem_strfree (&p_http-> file_name);
     mem_strfree (&p_http-> url);
     p_http-> url       = mem_strdup (buffer);
@@ -3241,9 +3241,9 @@ http_pipe (HTTP_CONTEXT *p_http, char *ext)
         counter_text [9];               /*  pipeNNNN                         */
 
     /*  Make stdin and stdout filenames                                      */
-    sprintf (counter_text, "pipe%04d", ++counter_value);
-    if (counter_value > 9999)
+    if (++counter_value > 9999)
         counter_value = 0;
+    sprintf (counter_text, "pipe%04d", counter_value);
 
     return (mem_strdup (file_where ('s', HCONFIG ("server:temp-dir"),
                                     counter_text, ext)));

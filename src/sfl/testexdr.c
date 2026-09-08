@@ -36,28 +36,28 @@ int main (int argc, char *argv [])
                              (dbyte) 0x12, (qbyte) 0x12L);
     dump (buffer, buffer_size);
     exdr_read (buffer, "bwq", &byte_value, &dbyte_value, &qbyte_value);
-    printf ("%02x %04x %08lx\n", byte_value, dbyte_value, qbyte_value);
+    printf ("%02x %04x %08x\n", byte_value, dbyte_value, qbyte_value);
 
     puts ("--- cdl ---");
     buffer_size = exdr_write (buffer, "cdl", (byte) 0x12,
                              (dbyte) 0x1234, (qbyte) 0x1234L);
     dump (buffer, buffer_size);
     exdr_read (buffer, "cdl", &byte_value, &dbyte_value, &qbyte_value);
-    printf ("%02x %04x %08lx\n", byte_value, dbyte_value, qbyte_value);
+    printf ("%02x %04x %08x\n", byte_value, dbyte_value, qbyte_value);
 
     puts ("--- bwq ---");
     buffer_size = exdr_write (buffer, "bwq", (byte) 0x12,
                              (dbyte) 0x1234, (qbyte) 0x123456L);
     dump (buffer, buffer_size);
     exdr_read (buffer, "bwq", &byte_value, &dbyte_value, &qbyte_value);
-    printf ("%02x %04x %08lx\n", byte_value, dbyte_value, qbyte_value);
+    printf ("%02x %04x %08x\n", byte_value, dbyte_value, qbyte_value);
 
     puts ("--- cdl ---");
     buffer_size = exdr_write (buffer, "cdl", (byte) 0x12,
                              (dbyte) 0x1234, (qbyte) 0x12345678L);
     dump (buffer, buffer_size);
     exdr_read (buffer, "cdl", &byte_value, &dbyte_value, &qbyte_value);
-    printf ("%02x %04x %08lx\n", byte_value, dbyte_value, qbyte_value);
+    printf ("%02x %04x %08x\n", byte_value, dbyte_value, qbyte_value);
 
     puts ("--- Bs ---");
     buffer_size = exdr_write (buffer, "Bs", TRUE, "AZaz");
@@ -80,7 +80,7 @@ int main (int argc, char *argv [])
     dump (buffer, buffer_size);
     exdr_read (buffer, "dmMq", &dbyte_value,
                &size_value, &string, &qbyte_value);
-    printf ("%04x %d %c%c%c%c %08lx\n", dbyte_value, size_value,
+    printf ("%04x %d %c%c%c%c %08x\n", dbyte_value, size_value,
              string_value [0], string_value [1],
              string_value [2], string_value [3], qbyte_value);
 

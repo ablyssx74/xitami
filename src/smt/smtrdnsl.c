@@ -1119,7 +1119,7 @@ get_rr_record (byte *position, byte *message, NS_RR_RESULT *tab, int tab_size)
     NS_GET32(ttl, position);
     if (dns_debug_mode)
       {
-        sprintf (buffer, "name:%s TTL:%ld %s %s",
+        sprintf (buffer, "name:%s TTL:%u %s %s",
                           name, ttl, ns_strclass(class), ns_strtype(type));
         if (strlen (buffer) > 255)
             buffer [255] = '\0';
@@ -1211,31 +1211,31 @@ get_rr_record (byte *position, byte *message, NS_RR_RESULT *tab, int tab_size)
             if (dns_debug_mode)
               {
                 sprintf (&strterm (buffer)," %s", name);
-                sprintf (&strterm (buffer),"(\n\t\t\t%ld\t;serial (version)",
+                sprintf (&strterm (buffer),"(\n\t\t\t%u\t;serial (version)",
                                 ns_get32(position));
               }
             position += NS_INT32_SIZE;
             if (dns_debug_mode)
                 sprintf (&strterm (buffer),
-                         "\n\t\t\t%ld\t;refresh period",
+                         "\n\t\t\t%u\t;refresh period",
                          ns_get32 (position));
 
             message += NS_INT32_SIZE;
             if (dns_debug_mode)
                 sprintf (&strterm (buffer),
-                         "\n\t\t\t%ld\t;retry refresh this often",
+                         "\n\t\t\t%u\t;retry refresh this often",
                          ns_get32 (position));
 
             position += NS_INT32_SIZE;
             if (dns_debug_mode)
                 sprintf (&strterm (buffer),
-                         "\n\t\t\t%ld\t;expiration period",
+                         "\n\t\t\t%u\t;expiration period",
                          ns_get32 (position));
 
             position += NS_INT32_SIZE;
             if (dns_debug_mode)
                 sprintf (&strterm (buffer),
-                         "\n\t\t\t%ld\t;minimum TTL\n\t\t\t)",
+                         "\n\t\t\t%u\t;minimum TTL\n\t\t\t)",
                          ns_get32(position));
 
             position += NS_INT32_SIZE;

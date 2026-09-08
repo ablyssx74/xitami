@@ -419,7 +419,7 @@ create_child (
     static char
         child_name [20];
 
-    sprintf (child_name, "%ld", tcb-> id);
+    sprintf (child_name, "%u", tcb-> id);
     if ((child = thread_create (AGENT_NAME, child_name)) != NULL)
       {
         event_send (
@@ -585,7 +585,7 @@ MODULE put_file (THREAD *thread)
 
 MODULE send_event_to_child_thread (THREAD *thread)
 {
-    long
+    qbyte
         id;
     THREAD
         *child;                         /*  Handle to child thread           */
@@ -595,7 +595,7 @@ MODULE send_event_to_child_thread (THREAD *thread)
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
     exdr_read (thread-> event-> body, "q", &id);
-    sprintf (child_name, "%ld", id);
+    sprintf (child_name, "%u", id);
     child = thread_lookup (AGENT_NAME, child_name);
     if (child)
         event_send (

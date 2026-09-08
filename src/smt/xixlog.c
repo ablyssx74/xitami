@@ -983,9 +983,9 @@ MODULE write_request_log_entry (THREAD *thread)
     STORE ("query"   , query_string? query_string: "");
     STORE ("method"  , tcb-> log-> method);
     STORE ("status"  , tcb-> log-> response);
-    STFMT ("recd"    , "%ld", tcb-> log-> size_recd);
-    STFMT ("sent"    , "%ld", tcb-> log-> size_sent);
-    STFMT ("time"    , "%ld", tcb-> log-> time_ms);
+    STFMT ("recd"    , "%u", tcb-> log-> size_recd);
+    STFMT ("sent"    , "%u", tcb-> log-> size_sent);
+    STFMT ("time"    , "%u", tcb-> log-> time_ms);
     STFMT ("stime"   , "%f", (float) (tcb-> log-> time_ms / 1000));
     STORE ("file"    , tcb-> log-> file_name);
     STORE ("agent"   , tcb-> log-> agent);
