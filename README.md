@@ -26,7 +26,7 @@ Xitami's source is ANSI C / POSIX and has historically built on:
 - Windows (3.x, 95, NT) and OS/2
 - Digital OpenVMS
 
-**Haiku (64-bit)** is also supported as of this fork — see
+**Haiku (32/64-bit)** is also supported as of this fork — see
 [`HAIKU-PORT.md`](HAIKU-PORT.md) for the porting notes.
 
 ## Building from source
