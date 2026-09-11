@@ -900,8 +900,21 @@ static word _LR_vector [] =
      *  which does call it (see action 15, Config-Server's own Save).
      *  Appending a new row here (rather than editing the existing one
      *  in place) avoids renumbering every _LR_offset entry after it -
-     *  only _LR_offset[55] below was changed, to point here instead.   */
-    59,22,16,8,4,_LR_STOP
+     *  only _LR_offset[55] below was changed, to point here instead.
+     *
+     *  First attempt at this fix ended the row in close_current_form,
+     *  show_config_server (8) instead of dialog_return (17), matching
+     *  the ORIGINAL (unfixed) row's own ending - but save_current_
+     *  config_file() frees config_table (see free_config_table()), and
+     *  show_config_server() -> put_values() reads straight from it,
+     *  with no NULL check anywhere in that path - a guaranteed crash
+     *  (Assertion failed: sflsymb.c, line 176, sym_lookup_symbol) on
+     *  every single save.  Config-Server's own Save (action 15) never
+     *  hits this because it ends in dialog_return, not a direct show_*
+     *  call - dialog_return pops back to whatever state opened this
+     *  page (typically Main-Menu) instead of re-rendering a page that
+     *  needs the table just freed out from under it.  Match that.      */
+    59,22,16,17,_LR_STOP
 };
 
 static HOOK *_LR_module [145] = {
