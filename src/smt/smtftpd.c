@@ -133,11 +133,13 @@ int smtftpd_init (void)
      *  declared, it does not drive a dialog transition here.  put_file()
      *  looks at thread-> event-> name to tell a real SSL_ACCEPTED/
      *  SSL_ERROR apart from an ordinary message.  SSL_PUT_SLICE_OK/
-     *  SSL_ERROR (for the actual download, also in put_file()) reuse
-     *  smttran's own finished/error events so the rest of the dialog
-     *  table needs no changes.                                           */
+     *  SSL_GET_SLICE_OK/SSL_ERROR (for the actual transfer, also handled
+     *  in put_file()/get_file()/append_file()) reuse smttran's own
+     *  finished/error events so the rest of the dialog table needs no
+     *  changes.                                                           */
     declare_ssl_accepted     (put_file_event, 0);
     declare_ssl_put_slice_ok (finished_event, SMT_PRIORITY_HIGH);
+    declare_ssl_get_slice_ok (finished_event, SMT_PRIORITY_HIGH);
     declare_ssl_error        (sock_error_event, SMT_PRIORITY_HIGH);
 
     /*  Public methods supported by this agent                               */
@@ -540,15 +542,45 @@ MODULE get_file (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    send_get_file (&tranq,
-                   tcb-> handle,
-                   tcb-> file_name,
-                   (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
-                   tcb-> file_offset,
-                   0,
-                   FALSE,
-                   tcb-> maxsize,
-                   tcb-> pipe);
+    /*  FTPS: same event_wait()/resume trick as put_file() - see the
+     *  comment there.  get_file() is GET_FILE_MODE, i.e. an upload
+     *  (client -> server, STOR): tell a real SSL_ACCEPTED/SSL_ERROR
+     *  reply apart from an ordinary first entry by name, same as
+     *  put_file() does.                                                  */
+    if (thread-> event && thread-> event-> name)
+      {
+        if (streq (thread-> event-> name, "SSL_ACCEPTED"))
+          {
+            tcb-> sslq           = thread-> event-> sender;
+            tcb-> tls_connection = TRUE;
+          }
+        else
+        if (streq (thread-> event-> name, "SSL_ERROR"))
+          {
+            raise_exception (exception_event);
+            return;
+          }
+      }
+
+    if (tcb-> tls_connection)
+        /*  FTPS: smttran talks to sockq directly and can't go through
+         *  smtssl, so bypass it and reuse smtssl's own get-slice handler
+         *  (the upload counterpart of the put-slice handler downloads
+         *  already use) instead.  This does not support ASCII
+         *  translation, resuming a partial upload (file_offset), or
+         *  quotas, unlike the plaintext path below - a known limit,
+         *  same shape as put_file()'s equivalent for downloads.         */
+        send_ssl_get_slice (&tcb-> sslq, tcb-> file_name, FALSE, 0);
+    else
+        send_get_file (&tranq,
+                       tcb-> handle,
+                       tcb-> file_name,
+                       (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
+                       tcb-> file_offset,
+                       0,
+                       FALSE,
+                       tcb-> maxsize,
+                       tcb-> pipe);
 }
 
 
@@ -583,15 +615,35 @@ MODULE append_file (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    send_get_file (&tranq,
-                   tcb-> handle,
-                   tcb-> file_name,
-                   (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
-                   tcb-> file_offset,
-                   0,
-                   TRUE,
-                   tcb-> maxsize,
-                   tcb-> pipe);
+    /*  FTPS: see get_file() - identical trick, this is APPEND_FILE_MODE
+     *  (APPE) rather than GET_FILE_MODE (STOR).                          */
+    if (thread-> event && thread-> event-> name)
+      {
+        if (streq (thread-> event-> name, "SSL_ACCEPTED"))
+          {
+            tcb-> sslq           = thread-> event-> sender;
+            tcb-> tls_connection = TRUE;
+          }
+        else
+        if (streq (thread-> event-> name, "SSL_ERROR"))
+          {
+            raise_exception (exception_event);
+            return;
+          }
+      }
+
+    if (tcb-> tls_connection)
+        send_ssl_get_slice (&tcb-> sslq, tcb-> file_name, TRUE, 0);
+    else
+        send_get_file (&tranq,
+                       tcb-> handle,
+                       tcb-> file_name,
+                       (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
+                       tcb-> file_offset,
+                       0,
+                       TRUE,
+                       tcb-> maxsize,
+                       tcb-> pipe);
 }
 
 

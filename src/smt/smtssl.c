@@ -97,6 +97,13 @@ typedef struct {                       /*  Thread context block             */
         write_size;                    /*    Exact size to write            */
     Bool
         write_is_slice;                /*    TRUE if this came from PUT_SLICE*/
+    /*  Parameters for a GET_SLICE ("receive over TLS into a file") in
+     *  progress, if pending_op == OP_READ and read_file != NULL - this is
+     *  the FTPS upload counterpart to write_is_slice/PUT_SLICE above.     */
+    FILE
+        *read_file;                    /*    Destination file, or NULL      */
+    qbyte
+        read_total;                    /*    Bytes written so far           */
 } TCB;
 
 /*- Function prototypes -----------------------------------------------------*/
@@ -149,6 +156,7 @@ enum {
     ssl_read_request_event,
     ssl_write_request_event,
     ssl_put_slice_event,
+    ssl_get_slice_event,                /*  FTPS upload: receive into a file */
     sock_input_ok_event,
     sock_output_ok_event,
     sock_error_event,
@@ -158,7 +166,7 @@ enum {
     exception_event
 };
 
-#define MAXEVENT        14
+#define MAXEVENT        15
 #define MAXSTATE        3
 #define STATE_INIT      0
 #define STATE_RUNNING   1
@@ -174,6 +182,7 @@ MODULE accept_new_connection     (THREAD *thread);
 MODULE start_read_request        (THREAD *thread);
 MODULE start_write_request       (THREAD *thread);
 MODULE start_put_slice_request   (THREAD *thread);
+MODULE start_get_slice_request   (THREAD *thread);
 MODULE resume_pending_input      (THREAD *thread);
 MODULE resume_pending_output     (THREAD *thread);
 MODULE handle_socket_error       (THREAD *thread);
@@ -199,30 +208,30 @@ MODULE handle_socket_error       (THREAD *thread);
 
 /*  Row order matches the event constants assigned in smtssl_init():
  *  0 open, 1 start, 2 close, 3 restart, 4 read_req, 5 write_req,
- *  6 put_slice, 7 input_ok, 8 output_ok, 9 sock_error, 10 sock_closed,
- *  11 shutdown, 12 error, 13 exception                                    */
+ *  6 put_slice, 7 get_slice, 8 input_ok, 9 output_ok, 10 sock_error,
+ *  11 sock_closed, 12 shutdown, 13 error, 14 exception                    */
 
 static word _nextst [MAXSTATE][MAXEVENT] =
 {
- /*              open start close restrt rdreq wrreq slice inok  outok err   clsd  shut  err   exc  */
- /* INIT     */ { 1,   1,   0,    0,    0,    0,    0,    0,    0,    0,    0,    2,    2,    2 },
- /* RUNNING  */ { 1,   1,   1,    1,    1,    1,    1,    1,    1,    1,    1,    2,    2,    2 },
- /* DEFAULTS */ { 2,   2,   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    2 }
+ /*              open start close restrt rdreq wrreq slice gslic inok  outok err   clsd  shut  err   exc  */
+ /* INIT     */ { 1,   1,   0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    2,    2,    2 },
+ /* RUNNING  */ { 1,   1,   1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    2,    2,    2 },
+ /* DEFAULTS */ { 2,   2,   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    2 }
 };
 
 /*  Action indices: 0 is the reserved "not handled here, fall through to
  *  STATE_DEFAULTS" sentinel (see smtlib.c's execute_thread()) - it is
- *  never actually dereferenced as a real transition.  1..11 are real,
+ *  never actually dereferenced as a real transition.  1..12 are real,
  *  and sock_error/sock_closed deliberately share action 10 (both just
  *  mean "something went wrong with this socket"), same as shutdown/
  *  error/exception all sharing action 11 (terminate) in STATE_DEFAULTS.  */
 
 static word _action [MAXSTATE][MAXEVENT] =
 {
- /*              open start close restrt rdreq wrreq slice inok outok err  clsd shut err exc */
- /* INIT     */ { 1,   2,   0,    0,    0,    0,    0,    0,   0,    0,   0,   0,   0,  0  },
- /* RUNNING  */ { 0,   0,   3,    4,    5,    6,    7,    8,   9,    10,  10,  0,   0,  0  },
- /* DEFAULTS */ { 11,  11,  11,   11,   11,   11,   11,   11,  11,   11,  11,  11,  11, 11 }
+ /*              open start close restrt rdreq wrreq slice gslic inok outok err  clsd shut err exc */
+ /* INIT     */ { 1,   2,   0,    0,    0,    0,    0,    0,    0,   0,    0,   0,   0,   0,  0  },
+ /* RUNNING  */ { 0,   0,   3,    4,    5,    6,    7,    12,   8,   9,    10,  10,  0,   0,  0  },
+ /* DEFAULTS */ { 11,  11,  11,   11,   11,   11,   11,   11,   11,  11,   11,  11,  11,  11, 11 }
 };
 
 static word _offset [] =
@@ -238,7 +247,8 @@ static word _offset [] =
     15,                                 /*   8: resume_pending_input         */
     17,                                 /*   9: resume_pending_output        */
     19,                                 /*  10: handle_socket_error          */
-    21                                  /*  11: terminate_the_thread         */
+    21,                                 /*  11: terminate_the_thread         */
+    23                                  /*  12: start_get_slice_request      */
 };
 
 static word _vector [] =
@@ -254,7 +264,8 @@ static word _vector [] =
     7, _STOP,                           /*  8: resume_pending_input          */
     8, _STOP,                           /*  9: resume_pending_output         */
     9, _STOP,                           /* 10: handle_socket_error           */
-    10, _STOP                           /* 11: terminate_the_thread          */
+    10, _STOP,                          /* 11: terminate_the_thread          */
+    11, _STOP                           /* 12: start_get_slice_request       */
 };
 
 static HOOK *_module [] = {
@@ -268,7 +279,8 @@ static HOOK *_module [] = {
     resume_pending_input,               /*  7 */
     resume_pending_output,              /*  8 */
     handle_socket_error,                /*  9 */
-    terminate_the_thread                /* 10 */
+    terminate_the_thread,               /* 10 */
+    start_get_slice_request             /* 11 */
 };
 
 #if (defined (DEBUG))
@@ -276,21 +288,23 @@ static char *_mname [] = {
     "Open-Ssl-Listener", "Begin-Connection", "Close-Ssl-Agent",
     "Restart-Ssl-Listener", "Start-Read-Request", "Start-Write-Request",
     "Start-Put-Slice-Request", "Resume-Pending-Input",
-    "Resume-Pending-Output", "Handle-Socket-Error", "Terminate-The-Thread"
+    "Resume-Pending-Output", "Handle-Socket-Error", "Terminate-The-Thread",
+    "Start-Get-Slice-Request"
 };
 static char *_sname [] = { "Init", "Running", "Defaults" };
 static char *_ename [] = {
     "Ssl-Open", "Start", "Ssl-Close", "Ssl-Restart", "Ssl-Read-Request",
-    "Ssl-Write-Request", "Ssl-Put-Slice", "Sock-Input-Ok", "Sock-Output-Ok",
-    "Sock-Error", "Sock-Closed", "Shutdown", "Error", "Exception"
+    "Ssl-Write-Request", "Ssl-Put-Slice", "Ssl-Get-Slice", "Sock-Input-Ok",
+    "Sock-Output-Ok", "Sock-Error", "Sock-Closed", "Shutdown", "Error",
+    "Exception"
 };
 #else
 static char *_mname [] = {
-    "0","1","2","3","4","5","6","7","8","9","10"
+    "0","1","2","3","4","5","6","7","8","9","10","11"
 };
 static char *_sname [] = { "0", "1", "2" };
 static char *_ename [] = {
-    "0","1","2","3","4","5","6","7","8","9","10","11","12","13"
+    "0","1","2","3","4","5","6","7","8","9","10","11","12","13","14"
 };
 #endif
 
@@ -365,6 +379,7 @@ smtssl_init (Bool https_enabled, Bool ftps_enabled, char *port,
         declare_ssl_read_request  (ssl_read_request_event,  0);
         declare_ssl_write_request (ssl_write_request_event, 0);
         declare_ssl_put_slice    (ssl_put_slice_event,   0);
+        declare_ssl_get_slice    (ssl_get_slice_event,   0);
         declare_sock_input_ok    (sock_input_ok_event,   0);
         declare_sock_output_ok   (sock_output_ok_event,  0);
         method_declare (agent, "SOCK_ERROR",     sock_error_event,      0);
@@ -546,7 +561,24 @@ MODULE terminate_the_thread (THREAD *thread)
 
     if (tcb-> ssl)
       {
-        SSL_shutdown (tcb-> ssl);
+        /*  try_shutdown() may already have driven a full, graceful
+         *  two-way close_notify exchange to completion before calling us
+         *  (see its rc >= 1 case) - SSL_get_shutdown() reports both
+         *  SSL_SENT_SHUTDOWN and SSL_RECEIVED_SHUTDOWN when that already
+         *  happened.  Calling SSL_shutdown() again here in that case
+         *  sends a second, spurious close_notify on an already-closed
+         *  TLS connection - harmless to us, but it confused real clients
+         *  (FileZilla/GnuTLS, Python's ftplib) into reporting exactly the
+         *  "improperly terminated"/SHUTDOWN_WHILE_IN_INIT failures the
+         *  graceful-shutdown code was added to fix.  Only attempt it here
+         *  when it has not already fully completed - every other caller
+         *  of terminate_the_thread() (a failed handshake, a read/write
+         *  error) never called SSL_shutdown() at all, so a best-effort
+         *  attempt there is still worthwhile.                            */
+        if ((SSL_get_shutdown (tcb-> ssl)
+            & (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN))
+            != (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN))
+            SSL_shutdown (tcb-> ssl);
         SSL_free (tcb-> ssl);
         tcb-> ssl = NULL;
       }
@@ -556,6 +588,17 @@ MODULE terminate_the_thread (THREAD *thread)
         tcb-> handle = 0;
       }
     mem_strfree ((char **) &tcb-> write_data);
+    if (tcb-> read_file)
+      {
+        /*  A GET_SLICE (FTPS upload) was still in progress - the
+         *  connection is being torn down out from under it (a client
+         *  abort, or the control channel forcing an abort mid-transfer).
+         *  Close the file so the fd isn't leaked; leave whatever was
+         *  written so far in place, same as a plain-FTP aborted upload
+         *  would (there's no "undo the partial write" step there either).*/
+        fclose (tcb-> read_file);
+        tcb-> read_file = NULL;
+      }
     if (tcb-> is_master)
       {
         if (ssl_ctx)
@@ -636,10 +679,12 @@ MODULE close_ssl_agent (THREAD *thread)
     TCB *tcb = thread-> tcb;
 
     if (tcb-> is_master || tcb-> ssl == NULL)
-      {
-        /*  Closing the master: shut the whole SSL service down            */
-        the_next_event = SMT_TERM_EVENT;
-      }
+        /*  Closing the master: shut the whole SSL service down.  Route
+         *  through terminate_the_thread() rather than setting
+         *  SMT_TERM_EVENT directly - thread_destroy() only frees the raw
+         *  TCB block, so skipping it would leak the listening socket
+         *  (and, for the master, ssl_ctx/g_cert_file etc).               */
+        terminate_the_thread (thread);
     else
         close_connection (thread, FALSE);
 }
@@ -695,9 +740,7 @@ MODULE begin_connection (THREAD *thread)
     if (tcb-> ssl == NULL)
       {
         sendfmt (&operq, "ERROR", "smtssl: SSL_new failed for new connection");
-        close_socket (tcb-> handle);
-        tcb-> handle = 0;
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);  /*  Closes tcb-> handle for us       */
         return;
       }
     SSL_set_fd (tcb-> ssl, (int) tcb-> handle);
@@ -811,6 +854,41 @@ MODULE start_put_slice_request (THREAD *thread)
 }
 
 
+/*************************   START GET SLICE REQUEST   ************************/
+/*  "Receive data from the SSL socket into a file" - the FTPS upload
+ *  (STOR/APPE) counterpart to start_put_slice_request() above.  The
+ *  actual receive loop lives in try_read_to_file(); this just opens the
+ *  destination file and kicks that off.  maxsize=0 in the request means
+ *  "no cap" - quota enforcement for encrypted uploads isn't implemented
+ *  yet (see FTPS-PORT.md), so this always accepts the whole upload.      */
+
+MODULE start_get_slice_request (THREAD *thread)
+{
+    TCB
+        *tcb = thread-> tcb;
+    struct_ssl_get_slice
+        *params;
+
+    tcb-> reply_to = thread-> event-> sender;
+
+    get_ssl_get_slice (thread-> event-> body, &params);
+    tcb-> read_total = 0;
+    tcb-> read_file   = fopen (params-> filename, params-> append? "ab": "wb");
+    if (tcb-> read_file == NULL)
+      {
+        sendfmt (&operq, "ERROR", "smtssl: cannot open '%s' for GET_SLICE: %s",
+                 params-> filename, strerror (errno));
+        free_ssl_get_slice (&params);
+        send_ssl_error (&tcb-> reply_to, 99);
+        terminate_the_thread (thread);
+        return;
+      }
+    free_ssl_get_slice (&params);
+
+    try_read (thread);
+}
+
+
 /**************************   RESUME PENDING INPUT   ***************************/
 /*  smtsock has told us our socket is now readable - continue whatever
  *  operation was waiting on that (accept, handshake, or read).           */
@@ -862,7 +940,7 @@ MODULE handle_socket_error (THREAD *thread)
         sendfmt (&operq, "ERROR",
             "smtssl: error waiting on the SSL listening socket - "
             "HTTPS service is stopping");
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);
     }
     else
     if (tcb-> pending_op == OP_SHUTDOWN)
@@ -872,8 +950,11 @@ MODULE handle_socket_error (THREAD *thread)
          *  completing their own half of the close.  That is not a new
          *  error worth reporting: the caller already got whatever
          *  success/failure notice applies to the actual transfer, long
-         *  before we started closing.                                  */
-        the_next_event = SMT_TERM_EVENT;
+         *  before we started closing.  Still route through
+         *  terminate_the_thread() (not a direct SMT_TERM_EVENT) so
+         *  tcb-> ssl/handle/write_data actually get cleaned up -
+         *  thread_destroy() only frees the bare TCB block.               */
+        terminate_the_thread (thread);
     else
         close_connection (thread, TRUE);
 }
@@ -961,7 +1042,89 @@ try_handshake (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        /*  Route through terminate_the_thread() rather than a direct
+         *  SMT_TERM_EVENT - thread_destroy() only frees the bare TCB
+         *  block, so skipping it would leak tcb-> ssl (never SSL_free'd)
+         *  and tcb-> handle (never closed) on every failed handshake -
+         *  e.g. a client that rejects our certificate.                   */
+        terminate_the_thread (thread);
+        return;
+      }
+    the_next_event = SMT_NULL_EVENT;
+}
+
+
+/*  -------------------------------------------------------------------------
+ *  try_read_to_file -- internal
+ *
+ *  GET_SLICE mode (tcb-> read_file != NULL): the FTPS upload counterpart
+ *  to try_write()'s PUT_SLICE mode.  Unlike a plain SSL_READ_REQUEST
+ *  (one reply per call, whatever ended up available), this drains
+ *  everything currently available in a loop - writing each chunk
+ *  straight to the destination file - and only reports back to our
+ *  caller once the peer closes the connection (upload complete) or an
+ *  error occurs; in between, WANT_READ/WANT_WRITE fall back to the
+ *  normal wait-for-socket-then-retry mechanism, same as try_read()'s
+ *  ordinary mode.  There is no bound on the whole file's size: like
+ *  start_put_slice_request()'s existing download path, only bytes are
+ *  addressed here, not RAM - each chunk read is written out and freed
+ *  before the next SSL_read(), rather than accumulating in memory.       */
+
+static void
+try_read_to_file (THREAD *thread)
+{
+    TCB
+        *tcb = thread-> tcb;
+    byte
+        buffer [READ_BUFFER_MAX];
+    int
+        rc, ssl_err;
+
+    FOREVER
+      {
+        rc = SSL_read (tcb-> ssl, buffer, sizeof (buffer));
+        if (rc <= 0)
+            break;
+        if (fwrite (buffer, 1, (size_t) rc, tcb-> read_file) != (size_t) rc)
+          {
+            sendfmt (&operq, "ERROR",
+                     "smtssl: write error saving uploaded file: %s",
+                     strerror (errno));
+            fclose (tcb-> read_file);
+            tcb-> read_file = NULL;
+            send_ssl_error (&tcb-> reply_to, 99);
+            terminate_the_thread (thread);
+            return;
+          }
+        tcb-> read_total += (qbyte) rc;
+      }
+    ssl_err = SSL_get_error (tcb-> ssl, rc);
+    if (ssl_err == SSL_ERROR_WANT_READ)
+        wait_for_readable (thread, OP_READ);
+    else
+    if (ssl_err == SSL_ERROR_WANT_WRITE)
+        wait_for_writable (thread, OP_READ);
+    else
+    if (ssl_err == SSL_ERROR_ZERO_RETURN)
+      {
+        /*  Clean TLS-level close: the client is done sending - the whole
+         *  point of a data-channel upload is that its end is signalled
+         *  by closing the connection, there being no equivalent of
+         *  Content-Length agreed up front.                              */
+        tcb-> pending_op = OP_NONE;
+        fclose (tcb-> read_file);
+        tcb-> read_file = NULL;
+        send_ssl_get_slice_ok (&tcb-> reply_to, tcb-> read_total);
+        the_next_event = SMT_NULL_EVENT;
+        return;
+      }
+    else
+      {
+        report_ssl_error (thread);
+        fclose (tcb-> read_file);
+        tcb-> read_file = NULL;
+        terminate_the_thread (thread);  /*  Not a direct SMT_TERM_EVENT -
+                                          *  see try_handshake() for why.    */
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -982,10 +1145,15 @@ try_read (THREAD *thread)
     int
         rc, ssl_err;
 
+    if (tcb-> read_file)
+      {
+        try_read_to_file (thread);
+        return;
+      }
     buffer = mem_alloc (tcb-> read_max? tcb-> read_max: 1);
     if (buffer == NULL)
       {
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);
         return;
       }
     rc = SSL_read (tcb-> ssl, buffer, (int) tcb-> read_max);
@@ -1016,7 +1184,8 @@ try_read (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);  /*  Not a direct SMT_TERM_EVENT -
+                                          *  see try_handshake() for why.    */
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -1058,7 +1227,13 @@ try_write (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        /*  Not a direct SMT_TERM_EVENT - see try_handshake() for why.
+         *  This one matters most in practice: tcb-> write_data (an
+         *  mem_alloc'd slice buffer, possibly the whole file) is still
+         *  allocated here whenever a client aborts an in-progress
+         *  download, and thread_destroy() alone would leak it - exactly
+         *  the kind of leak mem_assert() catches at shutdown.            */
+        terminate_the_thread (thread);
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -1137,8 +1312,13 @@ try_shutdown (THREAD *thread)
     rc = SSL_shutdown (tcb-> ssl);
     if (rc >= 1)
       {
-        tcb-> pending_op = OP_NONE;
-        the_next_event = SMT_TERM_EVENT;
+        /*  Both sides' close_notify exchanged - route through
+         *  terminate_the_thread() rather than a direct SMT_TERM_EVENT so
+         *  tcb-> ssl actually gets SSL_free'd and tcb-> handle closed;
+         *  thread_destroy() alone only frees the bare TCB block.  This is
+         *  the completion path for every ordinary HTTPS/FTPS close, so
+         *  skipping it here was the most consequential of these gaps.    */
+        terminate_the_thread (thread);
         return;
       }
     ssl_err = SSL_get_error (tcb-> ssl, rc);
@@ -1148,10 +1328,7 @@ try_shutdown (THREAD *thread)
     if (ssl_err == SSL_ERROR_WANT_WRITE)
         wait_for_writable (thread, OP_SHUTDOWN);
     else
-      {
-        tcb-> pending_op = OP_NONE;
-        the_next_event = SMT_TERM_EVENT;
-      }
+        terminate_the_thread (thread);
 }
 
 

@@ -1430,21 +1430,16 @@ MODULE send_get_data_file_request (THREAD *thread)
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    /*  FTPS: encrypted downloads (RETR/LIST/NLST) reuse smtssl's put-
-     *  slice handler, but encrypted uploads would need a comparable
-     *  "receive over TLS and write to file" loop that doesn't exist yet
-     *  - refuse cleanly rather than silently sending the file in the
-     *  clear while the client believes PROT P is protecting it.        */
-    if (tcb-> prot_private)
-      {
-        tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;
-        write_return_message (thread);
-        return;
-      }
-
     if (ALLOW_PUT
     || (ALLOW_UPLOAD && !file_exists (tcb-> ftp.file_name)))
       {
+        /*  FTPS: encrypted uploads (STOR/STOU under PROT P) reuse
+         *  smtssl's get-slice handler (send_ftpd_get_file()'s
+         *  protected_ flag below), the receive-side counterpart of the
+         *  put-slice handler encrypted downloads already use.  Quota
+         *  enforcement (maxsize, just below) is NOT applied to that
+         *  path yet - a known, narrower limitation than the encrypted
+         *  uploads being refused outright, see FTPS-PORT.md.            */
         old_usage = tcb-> ftp.cur_usage;
         if (file_exists (tcb-> ftp.file_name))
             tcb-> ftp.cur_usage 
@@ -1491,16 +1486,10 @@ MODULE send_append_data_file_request (THREAD *thread)
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    /*  FTPS: see the identical guard in send_get_data_file_request().    */
-    if (tcb-> prot_private)
-      {
-        tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;
-        write_return_message (thread);
-        return;
-      }
-
     if (ALLOW_PUT)
       {
+        /*  FTPS: see send_get_data_file_request() - encrypted APPE now
+         *  goes through the same smtssl get-slice path as STOR.         */
         if (tcb-> ftp.use_quotas)
           {
             if (tcb-> ftp.cur_usage > tcb-> ftp.hard_quota)

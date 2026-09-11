@@ -1072,3 +1072,211 @@ lsend_ssl_put_slice_ok (QID *_to, QID *_from,
 }
 
 
+/*  ---------------------------------------------------------------------[<]-
+ *  SSL_GET_SLICE / SSL_GET_SLICE_OK - hand-added for this fork (FTPS
+ *  upload support); see the comment in smtsslm.h.  Mirrors the
+ *  put_ssl_put_slice()/get_ssl_put_slice()/... functions above exactly.
+ *  ---------------------------------------------------------------------*/
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: put_ssl_get_slice
+
+    Synopsis: Formats a SSL_GET_SLICE message, allocates a new buffer,
+    and returns the formatted message in the buffer.  You should free the
+    buffer using mem_free() when finished.  Returns the size of the buffer
+    in bytes.
+    ---------------------------------------------------------------------[>]-*/
+
+int
+put_ssl_get_slice (
+    byte **_buffer,
+    char *filename,                     /*  Name of file to receive into     */
+    dbyte append,                       /*  TRUE: append (APPE); FALSE: STOR */
+    qbyte maxsize)                      /*  Max. bytes to accept; 0 = no cap */
+{
+    int _size;
+
+    _size = exdr_write (NULL, SSL_GET_SLICE, filename, append, maxsize);
+    *_buffer = mem_alloc (_size);
+    if (*_buffer)
+        exdr_write (*_buffer, SSL_GET_SLICE, filename, append, maxsize);
+    else
+        _size = 0;
+    return (_size);
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: get_ssl_get_slice
+
+    Synopsis: Accepts a buffer containing a SSL_GET_SLICE message,
+    and unpacks it into a new struct_ssl_get_slice structure. Free the
+    structure using free_ssl_get_slice() when finished.
+    ---------------------------------------------------------------------[>]-*/
+
+int
+get_ssl_get_slice (
+    byte *_buffer,
+    struct_ssl_get_slice **params)
+{
+    *params = mem_alloc (sizeof (struct_ssl_get_slice));
+    if (*params)
+      {
+        (*params)-> filename = NULL;
+        return (exdr_read (_buffer, SSL_GET_SLICE,
+                   &(*params)-> filename,
+                   &(*params)-> append,
+                   &(*params)-> maxsize));
+      }
+    else
+        return -1;
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: free_ssl_get_slice
+
+    Synopsis: frees a structure allocated by get_ssl_get_slice().
+    ---------------------------------------------------------------------[>]-*/
+
+void
+free_ssl_get_slice (
+    struct_ssl_get_slice **params)
+{
+    mem_free ((*params)-> filename);
+    mem_free (*params);
+    *params = NULL;
+}
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: send_ssl_get_slice
+
+    Synopsis: Sends a SSL_GET_SLICE (Receive SSL data into a file) event to
+    the smtssl agent
+    ---------------------------------------------------------------------[>]-*/
+
+int
+lsend_ssl_get_slice (QID *_to, QID *_from,
+    char *_accept,
+    char *_reject,
+    char *_expire,
+    word _timeout,
+    char *filename,                     /*  Name of file to receive into     */
+    dbyte append,                       /*  TRUE: append (APPE); FALSE: STOR */
+    qbyte maxsize)                      /*  Max. bytes to accept; 0 = no cap */
+{
+    byte *_body;
+    int   _size,
+          _rc;
+
+    _size = put_ssl_get_slice (&_body, filename, append, maxsize);
+    if (_size)
+      {
+        _rc = event_send (_to, _from, "SSL_GET_SLICE",
+                          _body, _size,
+                          _accept, _reject, _expire, _timeout);
+        mem_free (_body);
+        return _rc;
+      }
+    else
+        return -1;
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: put_ssl_get_slice_ok
+
+    Synopsis: Formats a SSL_GET_SLICE_OK message, allocates a new buffer,
+    and returns the formatted message in the buffer.  You should free the
+    buffer using mem_free() when finished.  Returns the size of the buffer
+    in bytes.
+    ---------------------------------------------------------------------[>]-*/
+
+int
+put_ssl_get_slice_ok (
+    byte **_buffer,
+    qbyte size)                         /*  Amount of received data          */
+{
+    int _size;
+
+    _size = exdr_write (NULL, SSL_GET_SLICE_OK, size);
+    *_buffer = mem_alloc (_size);
+    if (*_buffer)
+        exdr_write (*_buffer, SSL_GET_SLICE_OK, size);
+    else
+        _size = 0;
+    return (_size);
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: get_ssl_get_slice_ok
+
+    Synopsis: Accepts a buffer containing a SSL_GET_SLICE_OK message,
+    and unpacks it into a new struct_ssl_get_slice_ok structure. Free the
+    structure using free_ssl_get_slice_ok() when finished.
+    ---------------------------------------------------------------------[>]-*/
+
+int
+get_ssl_get_slice_ok (
+    byte *_buffer,
+    struct_ssl_get_slice_ok **params)
+{
+    *params = mem_alloc (sizeof (struct_ssl_get_slice_ok));
+    if (*params)
+      {
+        return (exdr_read (_buffer, SSL_GET_SLICE_OK,
+                   &(*params)-> size));
+      }
+    else
+        return -1;
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: free_ssl_get_slice_ok
+
+    Synopsis: frees a structure allocated by get_ssl_get_slice_ok().
+    ---------------------------------------------------------------------[>]-*/
+
+void
+free_ssl_get_slice_ok (
+    struct_ssl_get_slice_ok **params)
+{
+    mem_free (*params);
+    *params = NULL;
+}
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: send_ssl_get_slice_ok
+
+    Synopsis: Sends a SSL_GET_SLICE_OK (File received okay) event to
+    the smtssl agent
+    ---------------------------------------------------------------------[>]-*/
+
+int
+lsend_ssl_get_slice_ok (QID *_to, QID *_from,
+    char *_accept,
+    char *_reject,
+    char *_expire,
+    word _timeout,
+    qbyte size)                         /*  Amount of received data          */
+{
+    byte *_body;
+    int   _size,
+          _rc;
+
+    _size = put_ssl_get_slice_ok (&_body, size);
+    if (_size)
+      {
+        _rc = event_send (_to, _from, "SSL_GET_SLICE_OK",
+                          _body, _size,
+                          _accept, _reject, _expire, _timeout);
+        mem_free (_body);
+        return _rc;
+      }
+    else
+        return -1;
+}
+
+
