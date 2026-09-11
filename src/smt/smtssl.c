@@ -546,7 +546,24 @@ MODULE terminate_the_thread (THREAD *thread)
 
     if (tcb-> ssl)
       {
-        SSL_shutdown (tcb-> ssl);
+        /*  try_shutdown() may already have driven a full, graceful
+         *  two-way close_notify exchange to completion before calling us
+         *  (see its rc >= 1 case) - SSL_get_shutdown() reports both
+         *  SSL_SENT_SHUTDOWN and SSL_RECEIVED_SHUTDOWN when that already
+         *  happened.  Calling SSL_shutdown() again here in that case
+         *  sends a second, spurious close_notify on an already-closed
+         *  TLS connection - harmless to us, but it confused real clients
+         *  (FileZilla/GnuTLS, Python's ftplib) into reporting exactly the
+         *  "improperly terminated"/SHUTDOWN_WHILE_IN_INIT failures the
+         *  graceful-shutdown code was added to fix.  Only attempt it here
+         *  when it has not already fully completed - every other caller
+         *  of terminate_the_thread() (a failed handshake, a read/write
+         *  error) never called SSL_shutdown() at all, so a best-effort
+         *  attempt there is still worthwhile.                            */
+        if ((SSL_get_shutdown (tcb-> ssl)
+            & (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN))
+            != (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN))
+            SSL_shutdown (tcb-> ssl);
         SSL_free (tcb-> ssl);
         tcb-> ssl = NULL;
       }
@@ -636,10 +653,12 @@ MODULE close_ssl_agent (THREAD *thread)
     TCB *tcb = thread-> tcb;
 
     if (tcb-> is_master || tcb-> ssl == NULL)
-      {
-        /*  Closing the master: shut the whole SSL service down            */
-        the_next_event = SMT_TERM_EVENT;
-      }
+        /*  Closing the master: shut the whole SSL service down.  Route
+         *  through terminate_the_thread() rather than setting
+         *  SMT_TERM_EVENT directly - thread_destroy() only frees the raw
+         *  TCB block, so skipping it would leak the listening socket
+         *  (and, for the master, ssl_ctx/g_cert_file etc).               */
+        terminate_the_thread (thread);
     else
         close_connection (thread, FALSE);
 }
@@ -695,9 +714,7 @@ MODULE begin_connection (THREAD *thread)
     if (tcb-> ssl == NULL)
       {
         sendfmt (&operq, "ERROR", "smtssl: SSL_new failed for new connection");
-        close_socket (tcb-> handle);
-        tcb-> handle = 0;
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);  /*  Closes tcb-> handle for us       */
         return;
       }
     SSL_set_fd (tcb-> ssl, (int) tcb-> handle);
@@ -862,7 +879,7 @@ MODULE handle_socket_error (THREAD *thread)
         sendfmt (&operq, "ERROR",
             "smtssl: error waiting on the SSL listening socket - "
             "HTTPS service is stopping");
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);
     }
     else
     if (tcb-> pending_op == OP_SHUTDOWN)
@@ -872,8 +889,11 @@ MODULE handle_socket_error (THREAD *thread)
          *  completing their own half of the close.  That is not a new
          *  error worth reporting: the caller already got whatever
          *  success/failure notice applies to the actual transfer, long
-         *  before we started closing.                                  */
-        the_next_event = SMT_TERM_EVENT;
+         *  before we started closing.  Still route through
+         *  terminate_the_thread() (not a direct SMT_TERM_EVENT) so
+         *  tcb-> ssl/handle/write_data actually get cleaned up -
+         *  thread_destroy() only frees the bare TCB block.               */
+        terminate_the_thread (thread);
     else
         close_connection (thread, TRUE);
 }
@@ -961,7 +981,12 @@ try_handshake (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        /*  Route through terminate_the_thread() rather than a direct
+         *  SMT_TERM_EVENT - thread_destroy() only frees the bare TCB
+         *  block, so skipping it would leak tcb-> ssl (never SSL_free'd)
+         *  and tcb-> handle (never closed) on every failed handshake -
+         *  e.g. a client that rejects our certificate.                   */
+        terminate_the_thread (thread);
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -985,7 +1010,7 @@ try_read (THREAD *thread)
     buffer = mem_alloc (tcb-> read_max? tcb-> read_max: 1);
     if (buffer == NULL)
       {
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);
         return;
       }
     rc = SSL_read (tcb-> ssl, buffer, (int) tcb-> read_max);
@@ -1016,7 +1041,8 @@ try_read (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        terminate_the_thread (thread);  /*  Not a direct SMT_TERM_EVENT -
+                                          *  see try_handshake() for why.    */
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -1058,7 +1084,13 @@ try_write (THREAD *thread)
     else
       {
         report_ssl_error (thread);
-        the_next_event = SMT_TERM_EVENT;
+        /*  Not a direct SMT_TERM_EVENT - see try_handshake() for why.
+         *  This one matters most in practice: tcb-> write_data (an
+         *  mem_alloc'd slice buffer, possibly the whole file) is still
+         *  allocated here whenever a client aborts an in-progress
+         *  download, and thread_destroy() alone would leak it - exactly
+         *  the kind of leak mem_assert() catches at shutdown.            */
+        terminate_the_thread (thread);
         return;
       }
     the_next_event = SMT_NULL_EVENT;
@@ -1137,8 +1169,13 @@ try_shutdown (THREAD *thread)
     rc = SSL_shutdown (tcb-> ssl);
     if (rc >= 1)
       {
-        tcb-> pending_op = OP_NONE;
-        the_next_event = SMT_TERM_EVENT;
+        /*  Both sides' close_notify exchanged - route through
+         *  terminate_the_thread() rather than a direct SMT_TERM_EVENT so
+         *  tcb-> ssl actually gets SSL_free'd and tcb-> handle closed;
+         *  thread_destroy() alone only frees the bare TCB block.  This is
+         *  the completion path for every ordinary HTTPS/FTPS close, so
+         *  skipping it here was the most consequential of these gaps.    */
+        terminate_the_thread (thread);
         return;
       }
     ssl_err = SSL_get_error (tcb-> ssl, rc);
@@ -1148,10 +1185,7 @@ try_shutdown (THREAD *thread)
     if (ssl_err == SSL_ERROR_WANT_WRITE)
         wait_for_writable (thread, OP_SHUTDOWN);
     else
-      {
-        tcb-> pending_op = OP_NONE;
-        the_next_event = SMT_TERM_EVENT;
-      }
+        terminate_the_thread (thread);
 }
 
 
