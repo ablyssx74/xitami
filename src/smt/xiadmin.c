@@ -380,6 +380,10 @@ static FIELDREF
       { XIADM31_PIPEDEF,        "pipedef",         XIADM31_L_PIPEDEF         },
       { XIADM31_SSL_ENABLED,  "ssl-http:enabled",     XIADM31_L_SSL_ENABLED  },
       { XIADM31_SSL_FILENAME, "ssl-http:config-file", XIADM31_L_SSL_FILENAME },
+      { XIADM31_SSL_PORT,      "ssl-http:port",       XIADM31_L_SSL_PORT      },
+      { XIADM31_SSL_CERTFILE,  "ssl-http:cert-file",  XIADM31_L_SSL_CERTFILE  },
+      { XIADM31_SSL_KEYFILE,   "ssl-http:key-file",   XIADM31_L_SSL_KEYFILE   },
+      { XIADM31_SSL_CHAINFILE, "ssl-http:chain-file", XIADM31_L_SSL_CHAINFILE },
       { 0, NULL, 0                                                           }
     };
 
