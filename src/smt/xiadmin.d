@@ -586,7 +586,11 @@ static word _LR_offset [] =
     244,
     247,
     251,
-    255,
+    786,                                /*  55: Config-Advanced Save - was
+                                          *  255, now points to the hand-
+                                          *  appended row at the end of
+                                          *  _LR_vector that also calls
+                                          *  save_current_config_file.    */
     260,
     263,
     266,
@@ -885,7 +889,19 @@ static word _LR_vector [] =
     12,141,_LR_STOP,
     12,142,122,4,_LR_STOP,
     12,143,0,1,_LR_STOP,
-    12,144,139,_LR_STOP
+    12,144,139,_LR_STOP,
+    /*  Appended by hand (no Libero/fxgen tool available to regenerate
+     *  this file) to fix the "Advanced" config page's Save button: the
+     *  original row at action 55 (update_config_advanced, close_current_
+     *  form, show_config_server, decode_http_request_reponse) updated
+     *  config_table in memory but never called save_current_config_file,
+     *  so SSL/Advanced settings never actually reached defaults.cfg (or
+     *  whichever file is open) - unlike every other config page's Save,
+     *  which does call it (see action 15, Config-Server's own Save).
+     *  Appending a new row here (rather than editing the existing one
+     *  in place) avoids renumbering every _LR_offset entry after it -
+     *  only _LR_offset[55] below was changed, to point here instead.   */
+    59,22,16,8,4,_LR_STOP
 };
 
 static HOOK *_LR_module [145] = {
