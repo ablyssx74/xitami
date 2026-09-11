@@ -807,6 +807,23 @@ MODULE terminate_the_thread (THREAD *thread)
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
+    /*  FTPS: a successful, non-aborted transfer ends up here directly
+     *  (close_data_connection() only sits on the abort path) - so this is
+     *  actually the common case for a TLS data connection, not just the
+     *  exceptional one.  Closing tcb->handle out from under smtssl here,
+     *  the same way close_data_connection() already takes care not to,
+     *  would skip SSL_shutdown() entirely: the raw fd goes away with no
+     *  close_notify ever sent, which is exactly what left FTPS clients
+     *  (FileZilla via GnuTLS, Python's ftplib) seeing a truncated/
+     *  "improperly terminated" TLS connection right after a perfectly
+     *  good transfer.  Hand off to smtssl the same way for a graceful
+     *  close instead of closing the fd directly.                         */
+    if (tcb-> tls_connection)
+      {
+        send_ssl_close (&tcb-> sslq);
+        tcb-> handle = 0;
+      }
+    else
     if (tcb-> handle)
       {
         close_socket (tcb-> handle);
