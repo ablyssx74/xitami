@@ -554,10 +554,21 @@ MODULE terminate_the_thread (THREAD *thread)
         tcb-> handle = 0;
       }
     mem_strfree ((char **) &tcb-> write_data);
-    if (tcb-> is_master && ssl_ctx)
+    if (tcb-> is_master)
       {
-        SSL_CTX_free (ssl_ctx);
-        ssl_ctx = NULL;
+        if (ssl_ctx)
+          {
+            SSL_CTX_free (ssl_ctx);
+            ssl_ctx = NULL;
+          }
+        /*  g_port/g_cert_file/g_key_file/g_chain_file are mem_strdup'd
+         *  once in smtssl_init() and live for the process - free them
+         *  here (mirroring ssl_ctx above) so a clean shutdown doesn't
+         *  trip mem_assert()'s "everything was freed" check.           */
+        mem_strfree (&g_port);
+        mem_strfree (&g_cert_file);
+        mem_strfree (&g_key_file);
+        mem_strfree (&g_chain_file);
       }
     the_next_event = SMT_TERM_EVENT;
 }
