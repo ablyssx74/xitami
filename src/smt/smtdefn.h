@@ -48,6 +48,9 @@ int  smtftpc_init    (char *root);      /*  FTP control agent                */
 int  smtftpd_init    (void);            /*  FTP data agent                   */
 int  smtrdns_init    (void);            /*  Reverse DNS agent                */
 int  smtpipe_init    (char *pipefile);  /*  Transfer pipe agent              */
+int  smtssl_init     (Bool enabled, char *port, char *cert_file,
+                       char *key_file, char *chain_file);
+                                        /*  SSL (HTTPS) agent                */
 
 #ifdef __cplusplus
 }

@@ -71,4 +71,12 @@ Run `./xitami -h` for the full list of command-line options, and see
 ## License
 
 Xitami is copyright (c) 1991-2000 iMatix Corporation and distributed under
-the terms in [`license.txt`](license.txt).
+the terms in [`license.txt`](license.txt), which (section on modifications)
+asks that changes be indicated at the start of each modified source file.
+In place of individually annotating every touched file, this notice covers
+all of them: this fork modifies the original Xitami source to fix a number
+of portability and correctness bugs (see [`HAIKU-PORT.md`](HAIKU-PORT.md))
+and to add native HTTPS support via OpenSSL (see
+[`HTTPS-PORT.md`](HTTPS-PORT.md)). Git history and the pull requests that
+introduced these changes are the authoritative record of exactly what was
+modified and why.
