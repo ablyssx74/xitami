@@ -148,6 +148,12 @@ static int
 
 static Bool
     server_secure,                      /*  True if SSL agent is present     */
+    ssl_socket_open,                    /*  True once the HTTPS listener has
+                                          *  actually been opened - guards
+                                          *  against re-sending "open" to an
+                                          *  already-RUNNING SSL agent on a
+                                          *  later live Restart, see
+                                          *  open_ssl_socket_if_needed()      */
     server_logging;                     /*  True if server logging enabled   */
 static SYMTAB
     *vhosts;                            /*  Virtual hosts table              */
@@ -2388,7 +2394,17 @@ MODULE open_ssl_socket_if_needed (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    if (server_secure)
+    /*  Only ever send "open" to the SSL agent once - it moves the agent's
+     *  master thread from INIT to RUNNING, and the FSM has no handler for
+     *  a second "open" while already RUNNING (it falls through to
+     *  STATE_DEFAULTS, which terminates the thread - see smtssl.c). A
+     *  live Restart that happens after the HTTPS/FTPS listener is already
+     *  up (whether SSL was on since cold start, or just got activated by
+     *  restart_ssl_agent_if_reqd() on a previous live Restart) must not
+     *  repeat this call - restart_ssl_agent_if_reqd()'s send_ssl_restart()
+     *  has already reloaded the cert/key into the existing listener,
+     *  which is all a restart needs to do once the socket is open.        */
+    if (server_secure && !ssl_socket_open)
         send_ssl_open (&sslq, CONFIG ("ssl-http:config-file"));
 }
 
@@ -2405,6 +2421,8 @@ MODULE get_ssl_master_port (THREAD *thread)
     get_ssl_open_ok (thread-> event-> body, &open_ok_msg);
     ssl_port = open_ok_msg-> port;
     free_ssl_open_ok (&open_ok_msg);
+    ssl_socket_open = TRUE;             /*  Listener is up - see
+                                          *  open_ssl_socket_if_needed()      */
 }
 
 
@@ -2447,10 +2465,49 @@ MODULE create_ssl_child_thread (THREAD *thread)
 
 MODULE restart_ssl_agent_if_reqd (THREAD *thread)
 {
+    THREAD
+        *ssl_thread;                     /*  SMTSSL "main" thread, once it
+                                           *  exists                          */
+
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
     if (server_secure)
         send_ssl_restart (&sslq);
+    else
+    if (*CONFIG ("ssl-http:enabled") == '1'
+    ||  *CONFIG ("ssl-ftp:enabled")  == '1')
+      {
+        /*  SSL/FTPS wasn't running - the smtssl agent was never created
+         *  at all (see smtssl_init()'s own no-op case), because both
+         *  were off when this process first started.  This is a live
+         *  Restart from the admin UI, not a full process restart - the
+         *  only other place smtssl_init() otherwise runs is xitami.c's
+         *  main(), once, at cold startup - so if the admin has just
+         *  turned either of these on, nothing would otherwise ever
+         *  create the agent short of actually restarting the process.
+         *  smtssl_init() is safe to call again here: it detects the
+         *  agent already exists when it does (a no-op beyond reloading
+         *  the cert/key/chain files) and creates it fresh when it
+         *  doesn't - i.e. exactly what a full process restart would do,
+         *  without actually restarting the process.
+         *
+         *  Just set server_secure/sslq and stop there: this module's
+         *  own row (the live-Restart action) already runs
+         *  open_ssl_socket_if_needed() right after this one, and that
+         *  already does "if (server_secure) send_ssl_open(...)" - the
+         *  exact call we'd otherwise be duplicating here.               */
+        if (smtssl_init (*CONFIG ("ssl-http:enabled") == '1',
+                          *CONFIG ("ssl-ftp:enabled")  == '1',
+                          CONFIG ("ssl-http:port"),
+                          CONFIG ("ssl-http:cert-file"),
+                          CONFIG ("ssl-http:key-file"),
+                          CONFIG ("ssl-http:chain-file")) == 0
+        &&  (ssl_thread = thread_lookup ("SMTSSL", "main")) != NULL)
+          {
+            sslq          = ssl_thread-> queue-> qid;
+            server_secure = TRUE;
+          }
+      }
 }
 
 

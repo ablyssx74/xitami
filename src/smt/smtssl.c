@@ -342,6 +342,16 @@ smtssl_init (Bool https_enabled, Bool ftps_enabled, char *port,
     if (!https_enabled && !ftps_enabled)
         return (0);                     /*  SSL not wanted - fine, no-op     */
 
+    /*  Free any previous copies before overwriting - smtssl_init() is
+     *  meant to be safely re-callable (see the first_time check just
+     *  below), e.g. from smthttp.c's live-Restart path when SSL was
+     *  just turned on and the agent doesn't exist yet.  Without this,
+     *  each re-call after the first would leak the previous g_port/
+     *  g_cert_file/g_key_file/g_chain_file.                              */
+    mem_strfree (&g_port);
+    mem_strfree (&g_cert_file);
+    mem_strfree (&g_key_file);
+    mem_strfree (&g_chain_file);
     g_port       = mem_strdup (port);
     g_cert_file  = mem_strdup (cert_file);
     g_key_file   = mem_strdup (key_file);
