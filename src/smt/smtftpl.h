@@ -79,7 +79,8 @@ extern qbyte
 #define FTP_RC_PAGE_TYPE_UKNOW            36
 #define FTP_RC_BAD_STORAGE_ALLOC          37
 #define FTP_RC_PERMISSION_DENIED          38
-#define FTP_RC_MAX                        39
+#define FTP_RC_AUTH_OK                    39 /*  FTPS: new in this fork      */
+#define FTP_RC_MAX                        40
 
 typedef struct {
     char *code;                         /*  Response code, 3 digits          */
@@ -128,6 +129,7 @@ ftp_response [] = {
     { "551", "Failed: page type unknown"                                     },
     { "552", "Failed: aborted"                                               },
     { "553", "" /*  Permission denied */                                     },
+    { "234", "AUTH TLS OK"  /*  FTPS: RFC 4217 - new in this fork    */       },
     };
 #else
 extern FTP_RESPONSE ftp_response [];

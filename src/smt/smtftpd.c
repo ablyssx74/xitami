@@ -15,6 +15,7 @@
 
 #include "smtdefn.h"                    /*  SMT definitions                  */
 #include "smtftpl.h"                    /*  SMT FTP  declaration             */
+#include "smtsslm.h"                    /*  SMT SSL message functions (FTPS) */
 
 
 /*- Definitions -------------------------------------------------------------*/
@@ -37,7 +38,8 @@ typedef struct                          /*  Thread context block:            */
     event_t
         thread_type;                    /*    Thread type indicator          */
     QID
-        reply_to;                       /*    Message Queue to reply         */
+        reply_to,                       /*    Message Queue to reply         */
+        sslq;                           /*    Our SMTSSL connection thread   */
     char
         *file_name,                     /*  File name                        */
         *parameters,                    /*  Command parameters               */
@@ -48,7 +50,9 @@ typedef struct                          /*  Thread context block:            */
         timeout,                        /*  Wait input timeout               */
         data_port;                      /*  Port number of data connection   */
     Bool
-        passive;                        /*  TRUE if passive connection       */
+        passive,                        /*  TRUE if passive connection       */
+        protected_,                     /*  TRUE: wrap data conn. in TLS     */
+        tls_connection;                 /*  TRUE once TLS handshake is done  */
     qbyte
         id,                             /*  ID of control connection         */
         file_offset,                    /*  File offset for transfers        */
@@ -117,6 +121,24 @@ int smtftpd_init (void)
                                                SMT_PRIORITY_HIGH);
     method_declare (agent, "TRAN_ERROR",       sock_error_event,
                                                SMT_PRIORITY_HIGH);
+
+    /*  Reply events from smtssl, for FTPS (PROT P) data connections.
+     *  signal_connection_to_control() starts the handshake (once the
+     *  client has been told "150 Opening...", never before - see there)
+     *  then calls event_wait(); since it is never the last module in its
+     *  action list, that parks the thread BETWEEN modules rather than
+     *  sending it passive, so whichever of these three replies wakes it
+     *  next simply resumes that same list at put_file() - the mapping to
+     *  an event number below only has to be some value this agent has
+     *  declared, it does not drive a dialog transition here.  put_file()
+     *  looks at thread-> event-> name to tell a real SSL_ACCEPTED/
+     *  SSL_ERROR apart from an ordinary message.  SSL_PUT_SLICE_OK/
+     *  SSL_ERROR (for the actual download, also in put_file()) reuse
+     *  smttran's own finished/error events so the rest of the dialog
+     *  table needs no changes.                                           */
+    declare_ssl_accepted     (put_file_event, 0);
+    declare_ssl_put_slice_ok (finished_event, SMT_PRIORITY_HIGH);
+    declare_ssl_error        (sock_error_event, SMT_PRIORITY_HIGH);
 
     /*  Public methods supported by this agent                               */
     method_declare (agent, "FTPD_PASSIVE",     passive_event,
@@ -202,6 +224,17 @@ MODULE initialise_the_thread (THREAD *thread)
         tcb-> maxsize       = 0;
       }
     tcb-> handle = 0;
+
+    /*  FTPS: unlike the fields above, these are NOT part of create_child()'s
+     *  explicit parent->child copy list nor of the FTPD_PUT_FILE/GET_FILE/
+     *  APPEND_FILE wire messages (protected_ is the one exception - it IS
+     *  on the wire and gets set again when the child decodes its own copy
+     *  of the message), so unlike protected_, tls_connection/sslq would
+     *  otherwise be left as uninitialised memory on a freshly allocated
+     *  child thread - zero them unconditionally, for every thread type.  */
+    tcb-> protected_     = FALSE;
+    tcb-> tls_connection = FALSE;
+    memset (&tcb-> sslq, 0, sizeof (tcb-> sslq));
 }
 
 
@@ -336,7 +369,26 @@ MODULE signal_connection_to_control (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
+    /*  Always tell the control channel the data connection is up FIRST -
+     *  this is what makes smtftpc reply "150 Opening..." to the client.
+     *  For FTPS (PROT P) downloads that reply has to go out before we
+     *  attempt the data-channel TLS handshake: the client (per RFC 4217/
+     *  ftplib) only starts its side of the handshake once it has seen
+     *  "150", so starting ours first and waiting here would deadlock -
+     *  each side waiting on the other to go first.  This module is
+     *  always immediately followed by put_file()/get_file()/append_file()
+     *  in the same action list (never last), so event_wait() correctly
+     *  parks the thread here and resumes directly at that next module
+     *  once smtssl replies - see put_file()'s handling of the reply.     */
     SEND (&tcb-> reply_to, "FTPD_CONNECTED", "");
+
+    if (tcb-> protected_ && !tcb-> tls_connection)
+      {
+        if (smtssl_wrap_socket (tcb-> handle, &thread-> queue-> qid) < 0)
+            raise_exception (exception_event);
+        else
+            event_wait ();
+      }
 }
 
 
@@ -472,6 +524,7 @@ MODULE get_message_get_file (THREAD *thread)
                &tcb-> file_offset,
                &tcb-> data_host,
                &tcb-> data_port,
+               &tcb-> protected_,
                &tcb-> maxsize,
                &tcb-> pipe);
 
@@ -514,6 +567,7 @@ MODULE get_message_append_file (THREAD *thread)
                &tcb-> file_name,
                &tcb-> data_host,
                &tcb-> data_port,
+               &tcb-> protected_,
                &tcb-> maxsize,
                &tcb-> pipe);
 
@@ -557,6 +611,7 @@ MODULE get_message_put_file (THREAD *thread)
                &tcb-> file_offset,
                &tcb-> data_host,
                &tcb-> data_port,
+               &tcb-> protected_,
                &tcb-> pipe);
 
     tcb-> transfer_type = PUT_FILE_MODE;
@@ -571,13 +626,47 @@ MODULE put_file (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    send_put_file (&tranq,
-                   tcb-> handle,
-                   tcb-> file_name,
-                   (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
-                   tcb-> file_offset,
-                   0,                   /*  End... 0 = all of file           */
-                   tcb-> pipe);
+    /*  FTPS: when signal_connection_to_control() started a TLS handshake
+     *  it called event_wait() right after itself - since it is never the
+     *  last module in its action list, that parks the thread there and
+     *  resumes directly here (not by re-entering the dialog table) once
+     *  smtssl replies.  Tell a real reply apart from an ordinary first
+     *  entry (thread-> event is still the original FTPD_PUT_FILE message
+     *  in that case) by name; on success record the SSL queue so the
+     *  send_ssl_put_slice() call below is taken, on failure raise the
+     *  same exception a plaintext connect failure would.                 */
+    if (thread-> event && thread-> event-> name)
+      {
+        if (streq (thread-> event-> name, "SSL_ACCEPTED"))
+          {
+            tcb-> sslq           = thread-> event-> sender;
+            tcb-> tls_connection = TRUE;
+          }
+        else
+        if (streq (thread-> event-> name, "SSL_ERROR"))
+          {
+            raise_exception (exception_event);
+            return;
+          }
+      }
+
+    if (tcb-> tls_connection)
+        /*  FTPS: smttran talks to sockq directly and can't go through
+         *  smtssl, so bypass it and reuse smtssl's own put-slice
+         *  handler (the same one HTTPS downloads use) instead.  This
+         *  does not support ASCII translation or transfer pipes, unlike
+         *  the plaintext path below - fine for the common case (binary
+         *  file/listing downloads), a known limit for the rest.        */
+        send_ssl_put_slice (&tcb-> sslq, tcb-> handle, tcb-> file_name,
+                             tcb-> file_offset, 0);
+    else
+        send_put_file (&tranq,
+                       tcb-> handle,
+                       tcb-> file_name,
+                       (dbyte) (tcb-> file_type == FTP_TYPE_ASCII? 1: 0),
+                       tcb-> file_offset,
+                       0,                   /*  End... 0 = all of file       */
+                       tcb-> pipe);
 }
 
 
@@ -684,6 +773,21 @@ MODULE close_data_connection (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
+    if (tcb-> tls_connection)
+      {
+        /*  The smtssl connection thread, not us, owns this fd (it has
+         *  the live SSL object wrapping it) - ask IT to close and clean
+         *  up, rather than closing the fd out from under it here (which
+         *  would race: the fd could be reassigned to an unrelated new
+         *  connection before smtssl's own terminate_the_thread runs its
+         *  SSL_shutdown/SSL_free/close_socket).  Clear our own copy of
+         *  the handle so terminate_the_thread()'s unconditional close,
+         *  below, does not also close it a second time out from under
+         *  smtssl.                                                      */
+        send_ssl_close (&tcb-> sslq);
+        tcb-> handle = 0;
+      }
+    else
     if (tcb-> handle)
       {
         close_socket (tcb-> handle);

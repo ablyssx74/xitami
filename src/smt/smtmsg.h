@@ -1550,7 +1550,7 @@ int lsend_tran_error (QID *_to, QID *_from,
  *  Definitions and prototypes for smtftpd - FTP data transfer agent.
  *---------------------------------------------------------------------------*/
 
-#define SMT_FTPD_PUTF "qddsqqds"
+#define SMT_FTPD_PUTF "qddsqqdds"
 
 typedef struct {
     qbyte id;                           /*  ID for connection                */
@@ -1560,13 +1560,14 @@ typedef struct {
     qbyte start_position;               /*  Start offset for file            */
     qbyte host_address;                 /*  IP address for host              */
     dbyte port_number;                  /*  Port on remote host              */
+    dbyte protected_;                   /*  0/1 = wrap data conn. in TLS     */
     char *pipe;                         /*  Transfer pipe, if any            */
 } struct_smt_ftpd_putf;
 
 
 int  get_smt_ftpd_putf       (byte *_buffer, struct_smt_ftpd_putf **params);
 void free_smt_ftpd_putf      (struct_smt_ftpd_putf **params);
-int  put_smt_ftpd_putf       (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte start_position, qbyte host_address, dbyte port_number, char *pipe);
+int  put_smt_ftpd_putf       (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte start_position, qbyte host_address, dbyte port_number, dbyte protected_, char *pipe);
 
 #define declare_ftpd_put_file(_event, _priority)                             \
     method_declare (agent, "FTPD_PUT_FILE", _event, _priority)
@@ -1585,6 +1586,7 @@ int lsend_ftpd_put_file (QID *_to, QID *_from,
         qbyte start_position,           /*  Start offset for file            */
         qbyte host_address,             /*  IP address for host              */
         dbyte port_number,              /*  Port on remote host              */
+        dbyte protected_,               /*  0/1 = wrap data conn. in TLS     */
         char *pipe);                    /*  Transfer pipe, if any            */
 
 #define send_ftpd_put_file(_to,                                              \
@@ -1595,6 +1597,7 @@ int lsend_ftpd_put_file (QID *_to, QID *_from,
                            start_position,                                   \
                            host_address,                                     \
                            port_number,                                      \
+                           protected_,                                       \
                            pipe)                                             \
        lsend_ftpd_put_file(_to,                                              \
                            &thread-> queue-> qid,                            \
@@ -1606,10 +1609,11 @@ int lsend_ftpd_put_file (QID *_to, QID *_from,
                            start_position,                                   \
                            host_address,                                     \
                            port_number,                                      \
+                           protected_,                                       \
                            pipe)
 
 
-#define SMT_FTPD_GETF "qddsqqdqs"
+#define SMT_FTPD_GETF "qddsqqddqs"
 
 typedef struct {
     qbyte id;                           /*  ID for connection                */
@@ -1619,6 +1623,7 @@ typedef struct {
     qbyte start_position;               /*  Start offset for file            */
     qbyte host_address;                 /*  IP address for host              */
     dbyte port_number;                  /*  Port on remote host              */
+    dbyte protected_;                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize;                      /*  Max. size, -1 = no limit         */
     char *pipe;                         /*  Transfer pipe, if any            */
 } struct_smt_ftpd_getf;
@@ -1626,7 +1631,7 @@ typedef struct {
 
 int  get_smt_ftpd_getf       (byte *_buffer, struct_smt_ftpd_getf **params);
 void free_smt_ftpd_getf      (struct_smt_ftpd_getf **params);
-int  put_smt_ftpd_getf       (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte start_position, qbyte host_address, dbyte port_number, qbyte maxsize, char *pipe);
+int  put_smt_ftpd_getf       (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte start_position, qbyte host_address, dbyte port_number, dbyte protected_, qbyte maxsize, char *pipe);
 
 #define declare_ftpd_get_file(_event, _priority)                             \
     method_declare (agent, "FTPD_GET_FILE", _event, _priority)
@@ -1645,6 +1650,7 @@ int lsend_ftpd_get_file (QID *_to, QID *_from,
         qbyte start_position,           /*  Start offset for file            */
         qbyte host_address,             /*  IP address for host              */
         dbyte port_number,              /*  Port on remote host              */
+        dbyte protected_,               /*  0/1 = wrap data conn. in TLS     */
         qbyte maxsize,                  /*  Max. size, -1 = no limit         */
         char *pipe);                    /*  Transfer pipe, if any            */
 
@@ -1656,6 +1662,7 @@ int lsend_ftpd_get_file (QID *_to, QID *_from,
                            start_position,                                   \
                            host_address,                                     \
                            port_number,                                      \
+                           protected_,                                       \
                            maxsize,                                          \
                            pipe)                                             \
        lsend_ftpd_get_file(_to,                                              \
@@ -1668,11 +1675,12 @@ int lsend_ftpd_get_file (QID *_to, QID *_from,
                            start_position,                                   \
                            host_address,                                     \
                            port_number,                                      \
+                           protected_,                                       \
                            maxsize,                                          \
                            pipe)
 
 
-#define SMT_FTPD_APPEND "qddsqdqs"
+#define SMT_FTPD_APPEND "qddsqddqs"
 
 typedef struct {
     qbyte id;                           /*  ID for connection                */
@@ -1681,6 +1689,7 @@ typedef struct {
     char *filename;                     /*  Name of file to transfer         */
     qbyte host_address;                 /*  IP address for host              */
     dbyte port_number;                  /*  Port on remote host              */
+    dbyte protected_;                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize;                      /*  Max. size, -1 = no limit         */
     char *pipe;                         /*  Transfer pipe, if any            */
 } struct_smt_ftpd_append;
@@ -1688,7 +1697,7 @@ typedef struct {
 
 int  get_smt_ftpd_append     (byte *_buffer, struct_smt_ftpd_append **params);
 void free_smt_ftpd_append    (struct_smt_ftpd_append **params);
-int  put_smt_ftpd_append     (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte host_address, dbyte port_number, qbyte maxsize, char *pipe);
+int  put_smt_ftpd_append     (byte **_buffer, qbyte id, dbyte passive, dbyte filetype, char *filename, qbyte host_address, dbyte port_number, dbyte protected_, qbyte maxsize, char *pipe);
 
 #define declare_ftpd_append_file(_event, _priority)                          \
     method_declare (agent, "FTPD_APPEND_FILE", _event, _priority)
@@ -1706,6 +1715,7 @@ int lsend_ftpd_append_file (QID *_to, QID *_from,
         char *filename,                 /*  Name of file to transfer         */
         qbyte host_address,             /*  IP address for host              */
         dbyte port_number,              /*  Port on remote host              */
+        dbyte protected_,               /*  0/1 = wrap data conn. in TLS     */
         qbyte maxsize,                  /*  Max. size, -1 = no limit         */
         char *pipe);                    /*  Transfer pipe, if any            */
 
@@ -1716,6 +1726,7 @@ int lsend_ftpd_append_file (QID *_to, QID *_from,
                               filename,                                      \
                               host_address,                                  \
                               port_number,                                   \
+                              protected_,                                    \
                               maxsize,                                       \
                               pipe)                                          \
        lsend_ftpd_append_file(_to,                                           \
@@ -1727,6 +1738,7 @@ int lsend_ftpd_append_file (QID *_to, QID *_from,
                               filename,                                      \
                               host_address,                                  \
                               port_number,                                   \
+                              protected_,                                    \
                               maxsize,                                       \
                               pipe)
 

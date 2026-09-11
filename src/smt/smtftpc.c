@@ -17,6 +17,7 @@
 #include "smthttpl.h"                   /*  SMT HTTP definitions             */
 #include "smtftpl.h"                    /*  SMT FTP declarations             */
 #include "smtmsg.h"                     /*  SMT message functions            */
+#include "smtsslm.h"                    /*  SMT SSL message functions (FTPS) */
 #include "xixlog.h"                     /*  Xitami logging interface         */
 
 
@@ -85,6 +86,13 @@ typedef struct                          /*  Thread context block:            */
         ftp;                            /*    FTP control context            */
     dbyte
         data_port;                      /*    Default data port              */
+    /*  FTPS (RFC 4217 explicit TLS) support - see smtssl.c                  */
+    Bool
+        tls_pending,                    /*    AUTH TLS accepted, upgrading   */
+        tls_connection,                 /*    Control channel now encrypted  */
+        prot_private;                   /*    PROT P: data channel too       */
+    QID
+        sslq;                           /*    Our SMTSSL connection thread   */
 } TCB;
 
 typedef struct {                        /*  Virtual host resources           */
@@ -176,6 +184,17 @@ smtftpc_init (char *p_rootdir)          /*  Server root directory            */
     method_declare (agent, "SOCK_CLOSED",    sock_closed_event,  0);
     method_declare (agent, "SOCK_ERROR",     sock_error_event,   0);
     method_declare (agent, "SOCK_TIMEOUT",   sock_timeout_event, 0);
+
+    /*  Reply events from smtssl, once AUTH TLS upgrades the control
+     *  channel (see smtssl_wrap_socket()).  Mapped onto the exact same
+     *  event numbers as their plaintext equivalents above, so none of
+     *  the existing (pre-generated, hand-uneditable) dialog table rows
+     *  need to change: read_ftp_request/write_return_message tell the
+     *  two apart, when it matters, by event NAME instead.               */
+    declare_ssl_accepted     (input_ok_event,  0);
+    declare_ssl_read_ok      (input_ok_event,  0);
+    declare_ssl_write_ok     (ok_event,        0);
+    declare_ssl_error        (sock_error_event, 0);
 
     /*  Reply events from timer agent                                        */
     method_declare (agent, "TIME_ALARM",     timeout_event,
@@ -280,7 +299,18 @@ MODULE initialise_the_thread (THREAD *thread)
     tcb-> users    = NULL;
     tcb-> direct   = NULL;
     tcb-> request  = NULL;
-    
+
+    /*  FTPS: this TCB is not zeroed for us (see the other fields above,
+     *  each set individually) - without this, tls_connection can come
+     *  up as leftover/uninitialised non-zero memory on a freshly
+     *  allocated thread, making write_return_message() try to send the
+     *  reply through an equally-uninitialised sslq instead of the real
+     *  socket, silently dropping it (client sees a hang, not an error).*/
+    tcb-> tls_pending    = FALSE;
+    tcb-> tls_connection = FALSE;
+    tcb-> prot_private   = FALSE;
+    memset (&tcb-> sslq, 0, sizeof (tcb-> sslq));
+
     ftpc_init_connection (&tcb-> ftp, tcb-> handle);
 }
 
@@ -747,7 +777,28 @@ MODULE wait_for_socket_input (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    send_input (&sockq, 0, tcb-> handle, 0);
+    if (tcb-> tls_pending)
+      {
+        /*  The "234 AUTH TLS OK" reply just finished writing (still in
+         *  plaintext) - now start the actual TLS handshake on the same
+         *  socket.  We do NOT also call send_input() below: from here
+         *  on, smtssl's own per-connection thread owns waiting on this
+         *  handle until the handshake completes (SSL_ACCEPTED, mapped
+         *  to input_ok_event - see smtftpc_init()) or fails (SSL_ERROR).
+         */
+        tcb-> tls_pending = FALSE;
+        if (smtssl_wrap_socket (tcb-> handle, &thread-> queue-> qid) < 0)
+          {
+            sendfmt (&operq, "ERROR",
+                "smtftpc: could not start TLS handshake for AUTH TLS");
+            raise_exception (sock_error_event);
+          }
+      }
+    else
+    if (tcb-> tls_connection)
+        send_ssl_read_request (&tcb-> sslq, (word) (BUFFER_SIZE - tcb-> read_size));
+    else
+        send_input (&sockq, 0, tcb-> handle, 0);
 }
 
 
@@ -823,9 +874,52 @@ MODULE read_ftp_request (THREAD *thread)
 {
     int
         rc;                             /*  Return code from read            */
+    struct_ssl_accepted
+        *accept_msg;                    /*  TLS handshake completed          */
+    word
+        read_size;                      /*  Amount of data read over TLS     */
+    byte
+        *read_data = NULL;              /*  Data read over TLS               */
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
+    if (thread-> event && thread-> event-> name
+    &&  streq (thread-> event-> name, "SSL_ACCEPTED"))
+      {
+        /*  AUTH TLS handshake just completed - remember which smtssl
+         *  connection thread now owns this socket, and go straight back
+         *  to waiting for input (this time over TLS - see
+         *  wait_for_socket_input()).  Nothing was actually read yet, so
+         *  we must NOT fall through to check_if_more_input/
+         *  get_ftp_command with a stale/empty buffer.                    */
+        get_ssl_accepted (thread-> event-> body, &accept_msg);
+        free_ssl_accepted (&accept_msg);
+        tcb-> sslq           = thread-> event-> sender;
+        tcb-> tls_connection = TRUE;
+        raise_exception (sock_retry_event);
+        return;
+      }
+    if (thread-> event && thread-> event-> name
+    &&  streq (thread-> event-> name, "SSL_READ_OK"))
+      {
+        exdr_read (thread-> event-> body, SSL_READ_OK, &read_size, &read_data);
+        if (read_size > 0
+        &&  tcb-> read_size + (int) read_size < BUFFER_SIZE)
+          {
+            memcpy (&tcb-> buffer [tcb-> read_size], read_data, read_size);
+            tcb-> read_size += read_size;
+            tcb-> buffer [tcb-> read_size] = '\0';
+          }
+        else
+        if (read_size == 0)
+            raise_exception (sock_closed_event);
+        else                             /*  Command line too long            */
+            raise_exception (sock_error_event);
+        mem_free (read_data);
+        return;
+      }
+
+    /*  Plain SOCK_INPUT_OK - read directly off the socket as before         */
     rc = read_TCP (tcb-> handle, tcb-> buffer + tcb-> read_size,
                                  BUFFER_SIZE - tcb-> read_size);
     if (rc > 0)                     /*  We read something                    */
@@ -856,6 +950,7 @@ MODULE get_ftp_command (THREAD *thread)
       { "ACCT", unsupported_event  },   /*                                   */
       { "ALLO", unsupported_event  },   /*                                   */
       { "APPE", append_event       },   /*  Store file, with append          */
+      { "AUTH", unsupported_event  },   /*  FTPS: AUTH TLS (RFC 4217)        */
       { "CDUP", cdup_event         },   /*  Change to parent directory       */
       { "CWD",  cwd_event          },   /*  Change working directory         */
       { "DELE", delete_event       },   /*  Delete a file                    */
@@ -874,7 +969,9 @@ MODULE get_ftp_command (THREAD *thread)
       { "NOOP", noop_event         },   /*  Null operation                   */
       { "PASS", password_event     },   /*  User password                    */
       { "PASV", passive_event      },   /*  Request passive data connection  */
+      { "PBSZ", unsupported_event  },   /*  FTPS: protection buffer size     */
       { "PORT", port_event         },   /*  Data port                        */
+      { "PROT", unsupported_event  },   /*  FTPS: data channel protection    */
       { "PWD",  pwd_event          },   /*  Print current directory          */
       { "QUIT", quit_event         },   /*  Logout                           */
       { "REIN", reinit_event       },   /*  Reinitialise connection          */
@@ -980,7 +1077,11 @@ MODULE write_return_message (THREAD *thread)
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
     ftpc_return_message (&tcb-> ftp, buffer);
-    send_write (&sockq, 0, tcb-> handle,
+    if (tcb-> tls_connection)
+        send_ssl_write_request (&tcb-> sslq, 0, tcb-> handle,
+               (word) strlen (buffer), (byte *) buffer, 0);
+    else
+        send_write (&sockq, 0, tcb-> handle,
                (word) strlen (buffer), (byte *) buffer, 0);
 }
 
@@ -1301,15 +1402,16 @@ MODULE send_put_data_file_request (THREAD *thread)
     if (ALLOW_GET
     ||  tcb-> ftp.temp_file)
         send_ftpd_put_file (
-            &dataq,                     
-            thread-> thread_id,         
-            tcb-> ftp.passive,  
+            &dataq,
+            thread-> thread_id,
+            tcb-> ftp.passive,
             tcb-> ftp.file_type,
             tcb-> ftp.file_name,
             tcb-> ftp.file_offset,
-            tcb-> ftp.data_host,  
+            tcb-> ftp.data_host,
             tcb-> ftp.data_port,
-            tcb-> ftp.pipe); 
+            (dbyte) tcb-> prot_private,
+            tcb-> ftp.pipe);
     else
       {
         raise_exception (unauthorised_event);
@@ -1327,6 +1429,18 @@ MODULE send_get_data_file_request (THREAD *thread)
         maxsize = 0xFFFFFFFFUL;         /*  Max. permitted upload            */
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
+
+    /*  FTPS: encrypted downloads (RETR/LIST/NLST) reuse smtssl's put-
+     *  slice handler, but encrypted uploads would need a comparable
+     *  "receive over TLS and write to file" loop that doesn't exist yet
+     *  - refuse cleanly rather than silently sending the file in the
+     *  clear while the client believes PROT P is protecting it.        */
+    if (tcb-> prot_private)
+      {
+        tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;
+        write_return_message (thread);
+        return;
+      }
 
     if (ALLOW_PUT
     || (ALLOW_UPLOAD && !file_exists (tcb-> ftp.file_name)))
@@ -1348,14 +1462,15 @@ MODULE send_get_data_file_request (THREAD *thread)
           }
         if (!exception_raised)
             send_ftpd_get_file (
-                &dataq,                         
-                thread-> thread_id,             
-                tcb-> ftp.passive,      
-                tcb-> ftp.file_type,    
-                tcb-> ftp.file_name,    
-                tcb-> ftp.file_offset,  
-                tcb-> ftp.data_host,    
+                &dataq,
+                thread-> thread_id,
+                tcb-> ftp.passive,
+                tcb-> ftp.file_type,
+                tcb-> ftp.file_name,
+                tcb-> ftp.file_offset,
+                tcb-> ftp.data_host,
                 tcb-> ftp.data_port,
+                (dbyte) tcb-> prot_private,
                 maxsize,
                 tcb-> ftp.pipe);
       }
@@ -1376,6 +1491,14 @@ MODULE send_append_data_file_request (THREAD *thread)
 
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
+    /*  FTPS: see the identical guard in send_get_data_file_request().    */
+    if (tcb-> prot_private)
+      {
+        tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;
+        write_return_message (thread);
+        return;
+      }
+
     if (ALLOW_PUT)
       {
         if (tcb-> ftp.use_quotas)
@@ -1387,13 +1510,14 @@ MODULE send_append_data_file_request (THREAD *thread)
           }
         if (!exception_raised)
             send_ftpd_append_file (
-                &dataq,                       
-                thread-> thread_id,           
-                tcb-> ftp.passive,    
-                tcb-> ftp.file_type,  
-                tcb-> ftp.file_name,  
-                tcb-> ftp.data_host,  
+                &dataq,
+                thread-> thread_id,
+                tcb-> ftp.passive,
+                tcb-> ftp.file_type,
+                tcb-> ftp.file_name,
+                tcb-> ftp.data_host,
                 tcb-> ftp.data_port,
+                (dbyte) tcb-> prot_private,
                 maxsize,
                 tcb-> ftp.pipe);
       }
@@ -1694,7 +1818,65 @@ MODULE write_unsupported_command (THREAD *thread)
 {
     tcb = thread-> tcb;                 /*  Point to thread's context        */
 
-    tcb-> ftp.return_code = FTP_RC_COMMAND_NOT_IMPLEMENTED;
+    /*  FTPS (RFC 4217): AUTH/PBSZ/PROT share this generic "command known
+     *  but not handled by the dialog table" slot (see get_ftp_command())
+     *  purely to avoid needing new (hand-uneditable) dialog table rows -
+     *  handle the three of them here instead of falling through to the
+     *  generic "not implemented" reply below.                            */
+    if (streq (tcb-> ftp.command, "AUTH"))
+      {
+        if (tcb-> tls_connection)
+            tcb-> ftp.return_code = FTP_RC_BAD_SEQUENCE;    /* 503: already on */
+        else
+        if (tcb-> ftp.parameters
+        &&  (lexcmp (tcb-> ftp.parameters, "TLS") == 0
+        ||   lexcmp (tcb-> ftp.parameters, "TLS-C") == 0
+        ||   lexcmp (tcb-> ftp.parameters, "SSL") == 0))
+          {
+            if (smtssl_ready ())
+              {
+                tcb-> ftp.return_code = FTP_RC_AUTH_OK;     /* 234          */
+                write_return_message (thread);
+                /*  Upgrade to TLS right after this reply finishes
+                 *  writing - see wait_for_socket_input().               */
+                tcb-> tls_pending = TRUE;
+                return;
+              }
+            else
+                tcb-> ftp.return_code = FTP_RC_COMMAND_NOT_IMPLEMENTED; /* 502 */
+          }
+        else
+            tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;   /* 504          */
+      }
+    else
+    if (streq (tcb-> ftp.command, "PBSZ"))
+        /*  Always accept - TLS record-layer buffering makes the
+         *  protection buffer size concept moot, but RFC 4217 requires
+         *  the client be able to send this before PROT.                 */
+        tcb-> ftp.return_code = FTP_RC_COMMAND_OK;          /* 200          */
+    else
+    if (streq (tcb-> ftp.command, "PROT"))
+      {
+        if (!tcb-> tls_connection)
+            tcb-> ftp.return_code = FTP_RC_BAD_SEQUENCE;    /* 503          */
+        else
+        if (tcb-> ftp.parameters && lexcmp (tcb-> ftp.parameters, "P") == 0)
+          {
+            tcb-> prot_private    = TRUE;
+            tcb-> ftp.return_code = FTP_RC_COMMAND_OK;      /* 200          */
+          }
+        else
+        if (tcb-> ftp.parameters && lexcmp (tcb-> ftp.parameters, "C") == 0)
+          {
+            tcb-> prot_private    = FALSE;
+            tcb-> ftp.return_code = FTP_RC_COMMAND_OK;      /* 200          */
+          }
+        else
+            tcb-> ftp.return_code = FTP_RC_BAD_PARAMETER;   /* 504:S/E unsupported */
+      }
+    else
+        tcb-> ftp.return_code = FTP_RC_COMMAND_NOT_IMPLEMENTED;
+
     write_return_message (thread);
 }
 

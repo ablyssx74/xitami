@@ -100,6 +100,7 @@ static void  try_read            (THREAD *thread);
 static void  try_write           (THREAD *thread);
 static void  report_ssl_error    (THREAD *thread);
 static char *ssl_error_string    (SSL *ssl, int rc);
+static Bool  load_ssl_context    (void);
 
 /*- Global variables used in this source file only --------------------------*/
 
@@ -290,25 +291,31 @@ static char *_ename [] = {
 /*  ---------------------------------------------------------------------[<]-
     Function: smtssl_init
 
-    Synopsis: Initialises the SMTSSL agent, listening on 'port' with the
-    given certificate/key/optional-chain files (PEM format).  Call this
-    (if 'enabled' is TRUE) before smthttp_init(), so that smthttp_init()'s
-    own thread_lookup ("SMTSSL", "main") finds us and turns on HTTPS
-    support.  Does nothing (and returns 0) if 'enabled' is FALSE, so it is
-    always safe to call unconditionally.  Returns 0 if initialised okay
-    (including the disabled no-op case), -1 on error.
+    Synopsis: Initialises the SMTSSL agent with the given certificate/key/
+    optional-chain files (PEM format), shared by both HTTPS and FTPS.
+    'https_enabled' controls whether smthttp_init()'s own thread_lookup
+    ("SMTSSL", "main") will find us and open an HTTPS listener on 'port'
+    (call this before smthttp_init() if so).  'ftps_enabled' controls
+    whether the certificate/key get loaded for smtftpc's AUTH TLS/FTPS
+    support even when HTTPS itself is off - call this before
+    smtftpc_init() so smtssl_ready()/smtssl_wrap_socket() work in time.
+    Does nothing (and returns 0) if both are FALSE, so it is always safe
+    to call unconditionally.  Returns 0 if initialised okay (including
+    the disabled no-op case), -1 on error.
     ---------------------------------------------------------------------[>]-*/
 
 int
-smtssl_init (Bool enabled, char *port, char *cert_file, char *key_file,
-             char *chain_file)
+smtssl_init (Bool https_enabled, Bool ftps_enabled, char *port,
+             char *cert_file, char *key_file, char *chain_file)
 {
     AGENT
         *agent;
     THREAD
         *thread;
+    Bool
+        first_time;
 
-    if (!enabled)
+    if (!https_enabled && !ftps_enabled)
         return (0);                     /*  SSL not wanted - fine, no-op     */
 
     g_port       = mem_strdup (port);
@@ -316,68 +323,197 @@ smtssl_init (Bool enabled, char *port, char *cert_file, char *key_file,
     g_key_file   = mem_strdup (key_file);
     g_chain_file = mem_strdup (chain_file);
 
-    if (agent_lookup (AGENT_NAME))
-        return (0);                     /*  Already initialised              */
-    if ((agent = agent_declare (AGENT_NAME)) == NULL)
+    first_time = (agent_lookup (AGENT_NAME) == NULL);
+    if (first_time)
+      {
+        if ((agent = agent_declare (AGENT_NAME)) == NULL)
+            return (-1);
+
+        agent-> tcb_size    = sizeof (TCB);
+        agent-> stack_size  = 0;
+        agent-> initialise  = initialise_the_thread;
+        agent-> priority    = SMT_PRIORITY_NORMAL;
+        agent-> maxevent    = MAXEVENT;
+        agent-> maxmodule   = tblsize (_module);
+        agent-> maxstate    = MAXSTATE;
+        agent-> LR_defaults = STATE_DEFAULTS;
+        agent-> LR_nextst   = &_nextst [0][0];
+        agent-> LR_action   = &_action [0][0];
+        agent-> LR_offset   = _offset;
+        agent-> LR_vector   = _vector;
+        agent-> LR_module   = _module;
+        agent-> LR_mname    = _mname;
+        agent-> LR_sname    = _sname;
+        agent-> LR_ename    = _ename;
+
+        /*                    Method name        Event value       Priority */
+        method_declare (agent, "SHUTDOWN",       shutdown_event,        SMT_PRIORITY_MAX);
+        declare_ssl_open        (ssl_open_event,        0);
+        method_declare (agent, "_START",         start_event,           0);
+        declare_ssl_close       (ssl_close_event,       0);
+        declare_ssl_restart     (ssl_restart_event,     0);
+        declare_ssl_read_request  (ssl_read_request_event,  0);
+        declare_ssl_write_request (ssl_write_request_event, 0);
+        declare_ssl_put_slice    (ssl_put_slice_event,   0);
+        declare_sock_input_ok    (sock_input_ok_event,   0);
+        declare_sock_output_ok   (sock_output_ok_event,  0);
+        method_declare (agent, "SOCK_ERROR",     sock_error_event,      0);
+        method_declare (agent, "SOCK_CLOSED",    sock_closed_event,     0);
+        method_declare (agent, "ERROR",          error_event,           0);
+        method_declare (agent, "EXCEPTION",      exception_event,       0);
+
+        /*  Ensure that operator console and socket i/o agent are running   */
+        if (agent_lookup (SMT_OPERATOR) == NULL)
+            smtoper_init ();
+        if ((thread = thread_lookup (SMT_OPERATOR, "")) != NULL)
+            operq = thread-> queue-> qid;
+        else
+            return (-1);
+
+        if (agent_lookup (SMT_SOCKET) == NULL)
+            smtsock_init ();
+        if ((thread = thread_lookup (SMT_SOCKET, "")) != NULL)
+            sockq = thread-> queue-> qid;
+        else
+            return (-1);
+
+        /*  Create the named "main" thread; smthttp_init() looks this up
+         *  by name to decide whether HTTPS support is available.  It
+         *  stays passive until it gets an SSL_OPEN event from smthttp.   */
+        if (thread_create (AGENT_NAME, "main") == NULL)
+            return (-1);
+      }
+
+    /*  Load the certificate/key now (regardless of whether an HTTPS
+     *  listener is wanted) so smtssl_ready()/smtssl_wrap_socket() work
+     *  for smtftpc's AUTH TLS support even with HTTPS disabled.  This
+     *  is pure local computation (no socket/agent I/O), so unlike
+     *  opening the HTTPS listener itself, it doesn't need to go through
+     *  the SSL_OPEN event round-trip - do it synchronously right here.  */
+    if (!ssl_ctx && !load_ssl_context ())
         return (-1);
 
-    agent-> tcb_size    = sizeof (TCB);
-    agent-> stack_size  = 0;
-    agent-> initialise  = initialise_the_thread;
-    agent-> priority    = SMT_PRIORITY_NORMAL;
-    agent-> maxevent    = MAXEVENT;
-    agent-> maxmodule   = tblsize (_module);
-    agent-> maxstate    = MAXSTATE;
-    agent-> LR_defaults = STATE_DEFAULTS;
-    agent-> LR_nextst   = &_nextst [0][0];
-    agent-> LR_action   = &_action [0][0];
-    agent-> LR_offset   = _offset;
-    agent-> LR_vector   = _vector;
-    agent-> LR_module   = _module;
-    agent-> LR_mname    = _mname;
-    agent-> LR_sname    = _sname;
-    agent-> LR_ename    = _ename;
-
-    /*                        Method name        Event value       Priority */
-    method_declare (agent, "SHUTDOWN",       shutdown_event,        SMT_PRIORITY_MAX);
-    declare_ssl_open        (ssl_open_event,        0);
-    method_declare (agent, "_START",         start_event,           0);
-    declare_ssl_close       (ssl_close_event,       0);
-    declare_ssl_restart     (ssl_restart_event,     0);
-    declare_ssl_read_request  (ssl_read_request_event,  0);
-    declare_ssl_write_request (ssl_write_request_event, 0);
-    declare_ssl_put_slice    (ssl_put_slice_event,   0);
-    declare_sock_input_ok    (sock_input_ok_event,   0);
-    declare_sock_output_ok   (sock_output_ok_event,  0);
-    method_declare (agent, "SOCK_ERROR",     sock_error_event,      0);
-    method_declare (agent, "SOCK_CLOSED",    sock_closed_event,     0);
-    method_declare (agent, "ERROR",          error_event,           0);
-    method_declare (agent, "EXCEPTION",      exception_event,       0);
-
-    /*  Ensure that operator console and socket i/o agent are running       */
-    if (agent_lookup (SMT_OPERATOR) == NULL)
-        smtoper_init ();
-    if ((thread = thread_lookup (SMT_OPERATOR, "")) != NULL)
-        operq = thread-> queue-> qid;
-    else
-        return (-1);
-
-    if (agent_lookup (SMT_SOCKET) == NULL)
-        smtsock_init ();
-    if ((thread = thread_lookup (SMT_SOCKET, "")) != NULL)
-        sockq = thread-> queue-> qid;
-    else
-        return (-1);
-
-    /*  Create the named "main" thread; smthttp_init() looks this up by
-     *  name to decide whether SSL support is available.  It stays
-     *  passive until it gets an SSL_OPEN event from smthttp.             */
-    if (thread_create (AGENT_NAME, "main") == NULL)
-        return (-1);
-
-    sendfmt (&operq, "INFO", "smtssl: SSL agent ready (OpenSSL %s)",
-             OPENSSL_VERSION_TEXT);
+    if (first_time)
+        sendfmt (&operq, "INFO", "smtssl: SSL agent ready (OpenSSL %s)",
+                 OPENSSL_VERSION_TEXT);
     return (0);
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: smtssl_ready
+
+    Synopsis: Returns TRUE if a certificate/key have been loaded and
+    smtssl_wrap_socket() is therefore usable (whether or not the HTTPS
+    listener itself is running).
+    ---------------------------------------------------------------------[>]-*/
+
+Bool
+smtssl_ready (void)
+{
+    return (ssl_ctx != NULL);
+}
+
+
+/*  ---------------------------------------------------------------------[<]-
+    Function: smtssl_wrap_socket
+
+    Synopsis: Starts a TLS server handshake on 'handle', an already-
+    connected socket owned by the caller (e.g. an FTP control or data
+    connection partway through a plaintext session) - as opposed to a
+    connection smtssl accepted itself off its own HTTPS listener.  Same
+    protocol as a normal accept: on success, sends SSL_ACCEPTED to
+    'reply_to' once the handshake completes; on failure, sends
+    SSL_ERROR.  Returns 0 if the request was handed off okay, -1 if SSL
+    isn't ready (call smtssl_ready() first) or the thread couldn't be
+    created - in either case no reply event will follow.
+    ---------------------------------------------------------------------[>]-*/
+
+int
+smtssl_wrap_socket (sock_t handle, QID *reply_to)
+{
+    THREAD
+        *child;
+    byte
+        body [32];
+    int
+        body_size;
+
+    if (!ssl_ctx)
+        return (-1);
+    if ((child = thread_create (AGENT_NAME, "")) == NULL)
+        return (-1);
+
+    body_size = exdr_write (body, "qqq", (qbyte) handle,
+                             (qbyte) reply_to-> node,
+                             (qbyte) reply_to-> ident);
+    event_send (&child-> queue-> qid, NULL, "_START",
+                body, body_size, NULL, NULL, NULL, 0);
+    return (0);
+}
+
+
+/*  -------------------------------------------------------------------------
+ *  load_ssl_context -- internal
+ *
+ *  Builds ssl_ctx from g_cert_file/g_key_file/g_chain_file.  Returns
+ *  TRUE on success, FALSE (having already logged the reason) on error.
+ */
+
+static Bool
+load_ssl_context (void)
+{
+    if (strnull (g_cert_file) || strnull (g_key_file))
+      {
+        sendfmt (&operq, "ERROR",
+            "smtssl: ssl-http:cert-file and ssl-http:key-file must both "
+            "be set - SSL not started");
+        return (FALSE);
+      }
+    ssl_ctx = SSL_CTX_new (TLS_server_method ());
+    if (ssl_ctx == NULL)
+      {
+        sendfmt (&operq, "ERROR", "smtssl: SSL_CTX_new failed");
+        return (FALSE);
+      }
+    /*  Never fall back to the historically-broken protocol versions        */
+    SSL_CTX_set_min_proto_version (ssl_ctx, TLS1_2_VERSION);
+
+    /*  Prefer the chain file (cert + intermediates) if given, else just
+     *  the leaf certificate on its own.                                   */
+    if (strused (g_chain_file)
+    &&  SSL_CTX_use_certificate_chain_file (ssl_ctx, g_chain_file) != 1)
+      {
+        sendfmt (&operq, "ERROR", "smtssl: cannot load chain file '%s': %s",
+                 g_chain_file, ssl_error_string (NULL, 0));
+        goto failed;
+      }
+    else
+    if (strnull (g_chain_file)
+    &&  SSL_CTX_use_certificate_file (ssl_ctx, g_cert_file, SSL_FILETYPE_PEM) != 1)
+      {
+        sendfmt (&operq, "ERROR", "smtssl: cannot load cert file '%s': %s",
+                 g_cert_file, ssl_error_string (NULL, 0));
+        goto failed;
+      }
+    if (SSL_CTX_use_PrivateKey_file (ssl_ctx, g_key_file, SSL_FILETYPE_PEM) != 1)
+      {
+        sendfmt (&operq, "ERROR", "smtssl: cannot load key file '%s': %s",
+                 g_key_file, ssl_error_string (NULL, 0));
+        goto failed;
+      }
+    if (SSL_CTX_check_private_key (ssl_ctx) != 1)
+      {
+        sendfmt (&operq, "ERROR",
+                 "smtssl: certificate and private key do not match");
+        goto failed;
+      }
+    return (TRUE);
+
+  failed:
+    SSL_CTX_free (ssl_ctx);
+    ssl_ctx = NULL;
+    return (FALSE);
 }
 
 
@@ -433,73 +569,23 @@ MODULE open_ssl_listener (THREAD *thread)
     struct_ssl_open
         *params;
     char
-        *cert_file, *key_file, *chain_file, *port_str;
+        *port_str;
 
     get_ssl_open (thread-> event-> body, &params);
     free_ssl_open (&params);
 
     tcb-> is_master = TRUE;
     tcb-> reply_to  = thread-> event-> sender;
+    port_str        = g_port;
 
-    cert_file  = g_cert_file;
-    key_file   = g_key_file;
-    chain_file = g_chain_file;
-    port_str   = g_port;
-
-    if (strnull (cert_file) || strnull (key_file))
+    /*  The certificate/key are already loaded (or failed to load) at
+     *  smtssl_init() time, since FTPS may need ssl_ctx ready with no
+     *  HTTPS listener involved at all - see load_ssl_context().        */
+    if (!ssl_ctx)
       {
         sendfmt (&operq, "ERROR",
-            "smtssl: ssl-http:cert-file and ssl-http:key-file must both "
-            "be set - SSL not started");
+            "smtssl: no usable SSL certificate/key - HTTPS not started");
         send_ssl_error (&tcb-> reply_to, 1);
-        the_next_event = SMT_NULL_EVENT;
-        return;
-      }
-    ssl_ctx = SSL_CTX_new (TLS_server_method ());
-    if (ssl_ctx == NULL)
-      {
-        sendfmt (&operq, "ERROR", "smtssl: SSL_CTX_new failed");
-        send_ssl_error (&tcb-> reply_to, 2);
-        the_next_event = SMT_NULL_EVENT;
-        return;
-      }
-    /*  Never fall back to the historically-broken protocol versions        */
-    SSL_CTX_set_min_proto_version (ssl_ctx, TLS1_2_VERSION);
-
-    /*  Prefer the chain file (cert + intermediates) if given, else just
-     *  the leaf certificate on its own.                                   */
-    if (strused (chain_file)
-    &&  SSL_CTX_use_certificate_chain_file (ssl_ctx, chain_file) != 1)
-      {
-        sendfmt (&operq, "ERROR", "smtssl: cannot load chain file '%s': %s",
-                 chain_file, ssl_error_string (NULL, 0));
-        send_ssl_error (&tcb-> reply_to, 3);
-        the_next_event = SMT_NULL_EVENT;
-        return;
-      }
-    else
-    if (strnull (chain_file)
-    &&  SSL_CTX_use_certificate_file (ssl_ctx, cert_file, SSL_FILETYPE_PEM) != 1)
-      {
-        sendfmt (&operq, "ERROR", "smtssl: cannot load cert file '%s': %s",
-                 cert_file, ssl_error_string (NULL, 0));
-        send_ssl_error (&tcb-> reply_to, 3);
-        the_next_event = SMT_NULL_EVENT;
-        return;
-      }
-    if (SSL_CTX_use_PrivateKey_file (ssl_ctx, key_file, SSL_FILETYPE_PEM) != 1)
-      {
-        sendfmt (&operq, "ERROR", "smtssl: cannot load key file '%s': %s",
-                 key_file, ssl_error_string (NULL, 0));
-        send_ssl_error (&tcb-> reply_to, 4);
-        the_next_event = SMT_NULL_EVENT;
-        return;
-      }
-    if (SSL_CTX_check_private_key (ssl_ctx) != 1)
-      {
-        sendfmt (&operq, "ERROR",
-                 "smtssl: certificate and private key do not match");
-        send_ssl_error (&tcb-> reply_to, 5);
         the_next_event = SMT_NULL_EVENT;
         return;
       }
@@ -510,8 +596,6 @@ MODULE open_ssl_listener (THREAD *thread)
         sendfmt (&operq, "ERROR", "smtssl: could not open SSL port %s: %s",
                  port_str, sockmsg ());
         send_ssl_error (&tcb-> reply_to, 6);
-        SSL_CTX_free (ssl_ctx);
-        ssl_ctx = NULL;
         the_next_event = SMT_NULL_EVENT;
         return;
       }

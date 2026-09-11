@@ -13,6 +13,9 @@ OpenSSL, so plain HTTPS now works out of the box. It does not change how
 browser to reach the same web server, same document root, same CGI
 scripts.
 
+The same SSL agent is also used for FTPS (FTP over TLS) - see
+[FTPS-PORT.md](FTPS-PORT.md).
+
 ## What's implemented
 
 - Native TLS termination inside Xitami itself (no external stunnel/nginx
@@ -28,9 +31,6 @@ scripts.
 
 ## What's *not* implemented (yet)
 
-- **FTPS** (FTP over TLS) - out of scope for this first pass. Only the
-  web server (HTTP) got TLS support; the FTP server (`smtftpc.c`/
-  `smtftpd.c`) is unchanged and still plaintext-only.
 - **Automatic certificate issuance/renewal.** There is no built-in ACME
   client. You obtain and renew certificates yourself (e.g. with
   `certbot`, see below) and point Xitami at the resulting files; Xitami
