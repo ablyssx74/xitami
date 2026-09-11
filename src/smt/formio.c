@@ -2970,7 +2970,9 @@ form_exec (
     ...)                                /*  Optional argument list           */
 {
     va_list
-        argptr;                         /*  Argument list pointer            */
+        argptr,                         /*  Argument list pointer            */
+        argptr_copy;                    /*  Fresh copy handed to the_function
+                                          *  on every call - see note below   */
     byte
         *block_ptr;                     /*  Form block pointer               */
     word
@@ -2992,10 +2994,31 @@ form_exec (
         ASSERT (block_size > 0);
         if (BLOCK_IS_FIELD (BLOCK_type (block_ptr)))
             field_nbr++;
-        if ((*the_function) (form, block_ptr, field_nbr, argptr))
+
+        /*  the_function (e.g. form_get_block) always va_arg()s the SAME
+         *  fixed set of extra arguments from scratch on every call - it
+         *  is never meant to keep consuming further down a shared arg
+         *  stream across the many calls this loop makes.  On the LP64
+         *  ABI (all 64-bit Unix, this port's whole reason for existing),
+         *  va_list is itself a pointer to shared state, so passing the
+         *  one 'argptr' by value here is not the copy it looks like:
+         *  every va_arg() inside the_function permanently advances the
+         *  SAME va_list, so the second call onward reads whatever
+         *  happens to be past the real arguments - undefined behaviour,
+         *  observed here as a real crash (garbage SYMTAB* pointers) once
+         *  a form has more than a couple of blocks.  Handing out a fresh
+         *  va_copy() each iteration restores the copy-by-value semantics
+         *  this code was written against (and which happened to hold on
+         *  the 32-bit x86/OS2 ABI this was originally built for).       */
+        va_copy (argptr_copy, argptr);
+        if ((*the_function) (form, block_ptr, field_nbr, argptr_copy))
             count++;
         else
+          {
+            va_end (argptr_copy);
             break;
+          }
+        va_end (argptr_copy);
         block_ptr += block_size + 2;    /*  Move to next block               */
       }
     va_end (argptr);                    /*  End variable args processing     */
