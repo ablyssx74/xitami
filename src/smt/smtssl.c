@@ -72,7 +72,8 @@ enum {
     OP_ACCEPT,                         /*  Master: waiting to accept()       */
     OP_HANDSHAKE,                      /*  Connection: SSL_accept() pending  */
     OP_READ,                           /*  Connection: SSL_read() pending    */
-    OP_WRITE                           /*  Connection: SSL_write() pending   */
+    OP_WRITE,                          /*  Connection: SSL_write() pending   */
+    OP_SHUTDOWN                        /*  Connection: SSL_shutdown() pending*/
 };
 
 typedef struct {                       /*  Thread context block             */
@@ -106,6 +107,7 @@ static void  wait_for_writable   (THREAD *thread, int op);
 static void  try_handshake       (THREAD *thread);
 static void  try_read            (THREAD *thread);
 static void  try_write           (THREAD *thread);
+static void  try_shutdown        (THREAD *thread);
 static void  report_ssl_error    (THREAD *thread);
 static char *ssl_error_string    (SSL *ssl, int rc);
 static Bool  load_ssl_context    (void);
@@ -823,6 +825,7 @@ MODULE resume_pending_input (THREAD *thread)
         case OP_HANDSHAKE: try_handshake (thread);          break;
         case OP_READ:      try_read (thread);               break;
         case OP_WRITE:     try_write (thread);              break;
+        case OP_SHUTDOWN:  try_shutdown (thread);           break;
         default:           the_next_event = SMT_NULL_EVENT; break;
       }
 }
@@ -841,6 +844,7 @@ MODULE resume_pending_output (THREAD *thread)
         case OP_HANDSHAKE: try_handshake (thread); break;
         case OP_READ:      try_read (thread);      break;
         case OP_WRITE:     try_write (thread);     break;
+        case OP_SHUTDOWN:  try_shutdown (thread);  break;
         default:           the_next_event = SMT_NULL_EVENT; break;
       }
 }
@@ -860,6 +864,16 @@ MODULE handle_socket_error (THREAD *thread)
             "HTTPS service is stopping");
         the_next_event = SMT_TERM_EVENT;
     }
+    else
+    if (tcb-> pending_op == OP_SHUTDOWN)
+        /*  Already gracefully closing (our own close_notify went out,
+         *  we were waiting on the peer's) - plenty of peers just reset
+         *  the connection once they have their data instead of
+         *  completing their own half of the close.  That is not a new
+         *  error worth reporting: the caller already got whatever
+         *  success/failure notice applies to the actual transfer, long
+         *  before we started closing.                                  */
+        the_next_event = SMT_TERM_EVENT;
     else
         close_connection (thread, TRUE);
 }
@@ -1091,7 +1105,53 @@ close_connection (THREAD *thread, Bool send_error)
 
     if (send_error)
         send_ssl_error (&tcb-> reply_to, 99);
-    the_next_event = SMT_TERM_EVENT;
+    try_shutdown (thread);              /*  Attempt a graceful two-way close */
+}
+
+
+/*  -------------------------------------------------------------------------
+ *  try_shutdown -- internal
+ *
+ *  Drives SSL_shutdown() to completion, same retry pattern as
+ *  try_handshake()/try_read()/try_write().  A plain SSL_free() +
+ *  close_socket() (no SSL_shutdown at all, or one call and no more)
+ *  only sends our own close_notify and does not wait for the peer's -
+ *  some clients (seen with FileZilla/GnuTLS, and Python's ftplib
+ *  calling SSLSocket.unwrap()) treat that as an improperly terminated
+ *  connection and fail the whole operation, even though all the data
+ *  already arrived correctly.  SSL_shutdown() returns 1 once both
+ *  sides' close_notify have been exchanged; until then it behaves
+ *  exactly like SSL_read()/SSL_write() with respect to WANT_READ/
+ *  WANT_WRITE, so the same wait-for-socket-then-retry loop applies.
+ *  Any other outcome (peer resets instead of closing gracefully, or
+ *  the socket was already broken) just finishes the close - that is
+ *  not a new error worth reporting on top of whatever the caller
+ *  already knows.                                                       */
+
+static void
+try_shutdown (THREAD *thread)
+{
+    TCB *tcb = thread-> tcb;
+    int  rc, ssl_err;
+
+    rc = SSL_shutdown (tcb-> ssl);
+    if (rc >= 1)
+      {
+        tcb-> pending_op = OP_NONE;
+        the_next_event = SMT_TERM_EVENT;
+        return;
+      }
+    ssl_err = SSL_get_error (tcb-> ssl, rc);
+    if (ssl_err == SSL_ERROR_WANT_READ)
+        wait_for_readable (thread, OP_SHUTDOWN);
+    else
+    if (ssl_err == SSL_ERROR_WANT_WRITE)
+        wait_for_writable (thread, OP_SHUTDOWN);
+    else
+      {
+        tcb-> pending_op = OP_NONE;
+        the_next_event = SMT_TERM_EVENT;
+      }
 }
 
 
