@@ -64,6 +64,12 @@
 #define XIADM31_L_SSL_CHAINFILE             42
 #define XIADM31_SSL_CHAINFILE               43
 
+/*  New in this fork: FTPS enable checkbox (ssl-ftp:enabled), appended
+ *  after the HTTPS/SSL settings above for the same reason.  Reuses the
+ *  [Ssl-Http] certificate/key/chain files above - see FTPS-PORT.md.    */
+#define XIADM31_L_SSL_FTP_ENABLED            44
+#define XIADM31_SSL_FTP_ENABLED              45
+
 /*  This table contains each block in the form                               */
 
 static byte xiadm31_blocks [] = {
@@ -615,6 +621,40 @@ static byte xiadm31_blocks [] = {
     /*  </TD></TR>                                                           */
     0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
 
+    /*  ------------------------------------------------------------------
+     *  New in this fork: FTPS enable checkbox, same hand-written
+     *  BLOCK_PLAIN/BLOCK_TEXTUAL/BLOCK_BOOLEAN approach as the HTTPS/SSL
+     *  settings above.  See ssl-ftp:enabled in xitami.cfg/FTPS-PORT.md.
+     *  ------------------------------------------------------------------*/
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I',
+    'G', 'N', '=', 'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R',
+    'A', 'P', '>', 10,
+    /*  !--LABEL l_sslftpenabled: "Enable FTPS interface?:&nbsp;&nbsp;"      */
+    0, ';', 10, 6, 1, 0, 0, '#', 0, '#', 'l', 's', 's', 'l',
+    'f', 't', 'p', 'e', 'n', 'a', 'b', 'l', 'e', 'd', 0, 'E',
+    'n', 'a', 'b', 'l', 'e', ' ', 'F', 'T', 'P', 'S', ' ', 'i',
+    'n', 't', 'e', 'r', 'f', 'a', 'c', 'e', '?', ':', '&', 'n',
+    'b', 's', 'p', ';', '&', 'n', 'b', 's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, '"', 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A',
+    'L', 'I', 'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I',
+    'D', 'T', 'H', '=', '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD BOOLEAN sslftpenabled TRUE=yes FALSE=no VALUE=0             */
+    0, 26, 15, 0, 1, 's', 's', 'l', 'f', 't', 'p', 'e', 'n',
+    'a', 'b', 'l', 'e', 'd', 0, '0', 0, 'y', 'e', 's', 0, 'n',
+    'o', 0,
+    /*  FTPS - shares the HTTPS certificate                                  */
+    0, '%', 0, 'F', 'T', 'P', 'S', ' ', '-', ' ', 's', 'h', 'a',
+    'r', 'e', 's', ' ', 't', 'h', 'e', ' ', 'H', 'T', 'T', 'P',
+    'S', ' ', 'c', 'e', 'r', 't', 'i', 'f', 'i', 'c', 'a', 't',
+    'e', 10,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>',
+    10,
+
     /*  </TABLE>                                                             */
     0, 4, 1, 0, 6, 186,
     /*  </FORM>                                                              */
@@ -716,7 +756,10 @@ static FIELD_DEFN xiadm31_fields [] = {
     { 1670, 4158, 128 },                /*  ssl_keyfile                     */
     { 1800, 4231, 38 },                 /*  l_ssl_chainfile                 */
     { 1840, 4326, 128 },                /*  ssl_chainfile                   */
-    { 1970, 0, 0 },                     /*  -- sentinel --                  */
+    /*  New in this fork - see XIADM31_L_SSL_FTP_ENABLED etc. #defines above */
+    { 1970, 4401, 35 },                 /*  l_sslftpenabled                 */
+    { 2007, 4498, 1 },                  /*  sslftpenabled                   */
+    { 2010, 0, 0 },                     /*  -- sentinel --                  */
     };
 
 /*  The data of a form is a list of attributes and fields                    */
@@ -811,6 +854,11 @@ typedef struct {
     char   l_ssl_chainfile      [38 + 1];
     byte   ssl_chainfile_a      ;
     char   ssl_chainfile        [128 + 1];
+    /*  New in this fork - see XIADM31_L_SSL_FTP_ENABLED etc. #defines above */
+    byte   l_sslftpenabled_a    ;
+    char   l_sslftpenabled      [35 + 1];
+    byte   sslftpenabled_a      ;
+    char   sslftpenabled        [1 + 1];
     byte   back_a;
     byte   save_a;
     byte   default_a;
@@ -829,10 +877,16 @@ typedef struct {
 static FORM_DEFN form_xiadm31 = {
     xiadm31_blocks,
     xiadm31_fields,
-    167,                                /*  Number of blocks in form        */
-    44,                                 /*  Number of fields in form        */
+    173,                                /*  Number of blocks in form (was
+                                          *  167 - +6 for the FTPS checkbox
+                                          *  row appended below)             */
+    46,                                 /*  Number of fields in form (was
+                                          *  44 - +2 for the FTPS label and
+                                          *  checkbox appended below)        */
     11,                                 /*  Number of actions in form       */
-    1970,                               /*  Size of fields                  */
+    2010,                               /*  Size of fields (was 1970 -
+                                          *  matches the new sentinel's
+                                          *  data_offset in xiadm31_fields)  */
     "xiadm31",                          /*  Name of form                    */
     };
 

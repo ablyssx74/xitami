@@ -62,6 +62,11 @@
 #define XIADM16_L_IPADDRESS                 45
 #define XIADM16_IPADDRESS                   46
 
+/*  New in this fork: FTPS enable checkbox, duplicate of xiadm31.h's own
+ *  (ssl-ftp:enabled) kept here for visibility - see FTPS-PORT.md.       */
+#define XIADM16_L_SSL_FTP_ENABLED           47
+#define XIADM16_SSL_FTP_ENABLED             48
+
 /*  This table contains each block in the form                               */
 
 static byte xiadm16_blocks [] = {
@@ -647,6 +652,37 @@ static byte xiadm16_blocks [] = {
     's', 'e', 'l', 'e', 'c', 't', 'i', 'o', 'n', 0,
     /*  </TD></TR>                                                           */
     0, 4, 1, 0, 9, 'G',
+
+    /*  ------------------------------------------------------------------
+     *  New in this fork: FTPS enable checkbox, a duplicate of the one
+     *  hand-added to the Advanced page (xiadm31.h) - bound to the same
+     *  ssl-ftp:enabled config key, kept here too so it's not easy to
+     *  miss right under "Enable FTP server?" (see FTPS-PORT.md).
+     *  ------------------------------------------------------------------*/
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I', 'G',
+    'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I', 'G', 'N', '=',
+    'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R', 'A', 'P', '>', 10,
+    /*  !--LABEL l_sslftpenabled: "Enable FTPS interface?:&nbsp;&nbsp;"      */
+    0, ';', 10, 6, 1, 0, 0, '#', 0, '#', 'l', 's', 's', 'l', 'f', 't', 'p',
+    'e', 'n', 'a', 'b', 'l', 'e', 'd', 0, 'E', 'n', 'a', 'b', 'l', 'e', ' ',
+    'F', 'T', 'P', 'S', ' ', 'i', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e',
+    '?', ':', '&', 'n', 'b', 's', 'p', ';', '&', 'n', 'b', 's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, '"', 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I', 'D', 'T', 'H', '=',
+    '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD BOOLEAN sslftpenabled TRUE=yes FALSE=no VALUE=0             */
+    0, 26, 15, 0, 1, 's', 's', 'l', 'f', 't', 'p', 'e', 'n', 'a', 'b', 'l',
+    'e', 'd', 0, '0', 0, 'y', 'e', 's', 0, 'n', 'o', 0,
+    /*  FTPS - shares the HTTPS certificate                                  */
+    0, '%', 0, 'F', 'T', 'P', 'S', ' ', '-', ' ', 's', 'h', 'a', 'r', 'e',
+    's', ' ', 't', 'h', 'e', ' ', 'H', 'T', 'T', 'P', 'S', ' ', 'c', 'e',
+    'r', 't', 'i', 'f', 'i', 'c', 'a', 't', 'e', 10,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
+
     /*  </TABLE>                                                             */
     0, 4, 1, 0, 6, 172,
     /*  </FORM>                                                              */
@@ -750,7 +786,16 @@ static FIELD_DEFN xiadm16_fields [] = {
     { 2105, 4448, 5 },                  /*  data_port                       */
     { 2112, 4481, 31 },                 /*  l_ipaddress                     */
     { 2145, 4534, 3 },                  /*  ipaddress                       */
-    { 2150, 0, 0 },                     /*  -- sentinel --                  */
+    /*  New in this fork - see XIADM16_L_SSL_FTP_ENABLED etc. above.  Block
+     *  offsets found by searching the compiled byte sequence directly for
+     *  the field names, rather than hand-walking block sizes from the top
+     *  of the array - this form has at least one "!--IF" conditional
+     *  block that a naive walker misreads, drifting every subsequent
+     *  offset (confirmed against xiadm31.h, which has no such block and
+     *  where hand-walked and searched offsets agreed exactly).           */
+    { 2150, 4608, 35 },                 /*  l_sslftpenabled                 */
+    { 2187, 4705, 1 },                  /*  sslftpenabled                   */
+    { 2190, 0, 0 },                     /*  -- sentinel --                  */
     };
 
 /*  The data of a form is a list of attributes and fields                    */
@@ -850,6 +895,11 @@ typedef struct {
     char   l_ipaddress          [31 + 1];
     byte   ipaddress_a          ;
     char   ipaddress            [3 + 1];
+    /*  New in this fork - see XIADM16_L_SSL_FTP_ENABLED etc. above         */
+    byte   l_sslftpenabled_a    ;
+    char   l_sslftpenabled      [35 + 1];
+    byte   sslftpenabled_a      ;
+    char   sslftpenabled        [1 + 1];
     byte   back_a;
     byte   save_a;
     byte   default_a;
@@ -873,10 +923,16 @@ typedef struct {
 static FORM_DEFN form_xiadm16 = {
     xiadm16_blocks,
     xiadm16_fields,
-    185,                                /*  Number of blocks in form        */
-    47,                                 /*  Number of fields in form        */
+    191,                                /*  Number of blocks in form (was
+                                          *  185 - +6 for the FTPS checkbox
+                                          *  row appended below)             */
+    49,                                 /*  Number of fields in form (was
+                                          *  47 - +2 for the FTPS label and
+                                          *  checkbox appended below)        */
     16,                                 /*  Number of actions in form       */
-    2150,                               /*  Size of fields                  */
+    2190,                               /*  Size of fields (was 2150 -
+                                          *  matches the new sentinel's
+                                          *  data_offset in xiadm16_fields)  */
     "xiadm16",                          /*  Name of form                    */
     };
 
