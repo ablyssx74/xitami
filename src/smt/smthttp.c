@@ -1351,9 +1351,17 @@ MODULE parse_http_request (THREAD *thread)
 
     if (http_parse_request (&tcb-> http, tcb-> buffer))
       {
-        /*  Use SSL username from certificate if necessary                   */
+        /*  Use SSL username from certificate if necessary.  tcb->
+         *  ssl_username is never NULL for an HTTPS connection (smtssl.c's
+         *  SSL_ACCEPTED always carries a "user" field, "" when - as
+         *  today - there's no client-certificate support to derive a
+         *  real one from), so a plain non-NULL check here treated every
+         *  HTTPS request as if it had already supplied a (blank)
+         *  username, pre-empting normal Basic-Auth login.  Require a
+         *  non-empty value: only a genuine client-certificate username
+         *  should ever reach here.                                       */
         if (tcb-> http.username == NULL
-        &&  tcb-> ssl_username)
+        &&  tcb-> ssl_username && *tcb-> ssl_username)
             tcb-> http.username = mem_strdup (tcb-> ssl_username);
 
         switch (tcb-> http.method)
@@ -1552,10 +1560,19 @@ MODULE check_if_protected (THREAD *thread)
         if (socket_is_permitted (socket_peeraddr (tcb-> handle), url_webmask))
           {
             /*  SSL certificates can be used for protected resources
-             *  by specifying the password as '*SSL'.
-             */
+             *  by specifying the password as '*SSL'.  tcb-> ssl_username
+             *  is never NULL for an HTTPS connection (see the comment in
+             *  parse_http_request()) - require it to be non-empty too,
+             *  so this branch only fires for a genuine client-certificate
+             *  username.  Without this, EVERY protected resource became
+             *  permanently unreachable over HTTPS: this branch always
+             *  matched first, always failed the "*SSL" check against a
+             *  blank username, and - being an if/else-if chain - that
+             *  skipped both the "all=*" and normal username/password
+             *  checks below entirely, regardless of what the browser
+             *  actually sent.                                            */
             if (tcb-> ssl_connection
-            &&  tcb-> ssl_username
+            &&  tcb-> ssl_username && *tcb-> ssl_username
             &&  !http_reserved_username (tcb-> ssl_username))
               {
                 url_password = ini_dyn_value (tcb-> passwd,
@@ -2680,6 +2697,12 @@ MODULE shutdown_the_application (THREAD *thread)
     /*  Free all resources used by the web server                            */
     mem_strfree (&request_log);         /*  Debug log file - requests        */
     mem_strfree (&header_log);          /*  Debug log file - replies         */
+    /*  rootdir/cgidir are our own mem_strdup'd copies (see
+     *  smthttp_init()'s comment on why they can't just alias config's own
+     *  storage) - free them here so a clean shutdown doesn't trip
+     *  mem_assert()'s "everything was freed" check.                       */
+    mem_strfree (&rootdir);
+    mem_strfree (&cgidir);
     mem_free (hostaddrs);
     http_term ();                       /*  Terminate HTTP library           */
     smt_shutdown ();                    /*  Halt the application             */
