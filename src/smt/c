@@ -207,7 +207,7 @@ if [ -z "$CCOPTS" ]; then
         LINKPATH=1
 
     elif [ "$UTYPE" = "Linux" ]; then
-        STDLIBS="-lm"
+        STDLIBS="-lssl -lcrypto -lm"
         CCNAME="${CCNAME:-gcc}"             #   Use gcc if not set
         case "$CCPRODLEVEL" in 
             debug)
@@ -291,7 +291,9 @@ if [ -z "$CCOPTS" ]; then
         
     elif [ "$UTYPE" = "Haiku" ]; then
         #  Haiku 64-bit nightly: modern gcc, POSIX sockets in libnetwork.
-        STDLIBS="-lnetwork -lm"
+        #  -lssl -lcrypto: HTTPS support (smtssl.c) - needs the
+        #  openssl3_devel package (or similar) installed.
+        STDLIBS="-lssl -lcrypto -lnetwork -lm"
         CCNAME="${CCNAME:-gcc}"             #   Use gcc if not set
         case "$CCPRODLEVEL" in
             debug)

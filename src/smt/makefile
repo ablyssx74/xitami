@@ -137,6 +137,9 @@ libsmt$(LIB)(smtrdnsl$(OBJ)): smtrdnsl$(OBJ)
 libsmt$(LIB)(smtsslm$(OBJ)): smtsslm$(OBJ)
 	$(C) -q -r libsmt$(LIB) smtsslm$(OBJ)
 
+libsmt$(LIB)(smtssl$(OBJ)): smtssl$(OBJ)
+	$(C) -q -r libsmt$(LIB) smtssl$(OBJ)
+
 libsmt$(LIB)(xixlogm$(OBJ)): xixlogm$(OBJ)
 	$(C) -q -r libsmt$(LIB) xixlogm$(OBJ)
 
@@ -179,7 +182,7 @@ libsmt$(LIB)(smttst2$(OBJ)): smttst2$(OBJ)
 libsmt$(LIB)(smttst3$(OBJ)): smttst3$(OBJ)
 	$(C) -q -r libsmt$(LIB) smttst3$(OBJ)
 
-LIBSMT_LIST = libsmt$(LIB)(smtlog$(OBJ)) libsmt$(LIB)(smtmsg$(OBJ)) libsmt$(LIB)(smtecho$(OBJ)) libsmt$(LIB)(smthttp$(OBJ)) libsmt$(LIB)(smtoper$(OBJ)) libsmt$(LIB)(smtsock$(OBJ)) libsmt$(LIB)(smtslot$(OBJ)) libsmt$(LIB)(smtsimu$(OBJ)) libsmt$(LIB)(smtupmd$(OBJ)) libsmt$(LIB)(smtupmc$(OBJ)) libsmt$(LIB)(smttran$(OBJ)) libsmt$(LIB)(smttime$(OBJ)) libsmt$(LIB)(smtftpc$(OBJ)) libsmt$(LIB)(smtftpd$(OBJ)) libsmt$(LIB)(smtlib$(OBJ)) libsmt$(LIB)(smtrdns$(OBJ)) libsmt$(LIB)(smthlog$(OBJ)) libsmt$(LIB)(smtpipe$(OBJ)) libsmt$(LIB)(smthttpl$(OBJ)) libsmt$(LIB)(smtftpl$(OBJ)) libsmt$(LIB)(smtrdnsl$(OBJ)) libsmt$(LIB)(smtsslm$(OBJ)) libsmt$(LIB)(xixlogm$(OBJ)) libsmt$(LIB)(formio$(OBJ)) libsmt$(LIB)(xixlog$(OBJ)) libsmt$(LIB)(xiadmin$(OBJ)) libsmt$(LIB)(xierror$(OBJ)) libsmt$(LIB)(xixssi$(OBJ)) libsmt$(LIB)(xixxml$(OBJ)) libsmt$(LIB)(xilrwp$(OBJ)) libsmt$(LIB)(xisuper$(OBJ)) libsmt$(LIB)(xiddns$(OBJ)) libsmt$(LIB)(xiimap$(OBJ)) libsmt$(LIB)(smttst1$(OBJ)) libsmt$(LIB)(smttst2$(OBJ)) libsmt$(LIB)(smttst3$(OBJ))
+LIBSMT_LIST = libsmt$(LIB)(smtlog$(OBJ)) libsmt$(LIB)(smtmsg$(OBJ)) libsmt$(LIB)(smtecho$(OBJ)) libsmt$(LIB)(smthttp$(OBJ)) libsmt$(LIB)(smtoper$(OBJ)) libsmt$(LIB)(smtsock$(OBJ)) libsmt$(LIB)(smtslot$(OBJ)) libsmt$(LIB)(smtsimu$(OBJ)) libsmt$(LIB)(smtupmd$(OBJ)) libsmt$(LIB)(smtupmc$(OBJ)) libsmt$(LIB)(smttran$(OBJ)) libsmt$(LIB)(smttime$(OBJ)) libsmt$(LIB)(smtftpc$(OBJ)) libsmt$(LIB)(smtftpd$(OBJ)) libsmt$(LIB)(smtlib$(OBJ)) libsmt$(LIB)(smtrdns$(OBJ)) libsmt$(LIB)(smthlog$(OBJ)) libsmt$(LIB)(smtpipe$(OBJ)) libsmt$(LIB)(smthttpl$(OBJ)) libsmt$(LIB)(smtftpl$(OBJ)) libsmt$(LIB)(smtrdnsl$(OBJ)) libsmt$(LIB)(smtsslm$(OBJ)) libsmt$(LIB)(smtssl$(OBJ)) libsmt$(LIB)(xixlogm$(OBJ)) libsmt$(LIB)(formio$(OBJ)) libsmt$(LIB)(xixlog$(OBJ)) libsmt$(LIB)(xiadmin$(OBJ)) libsmt$(LIB)(xierror$(OBJ)) libsmt$(LIB)(xixssi$(OBJ)) libsmt$(LIB)(xixxml$(OBJ)) libsmt$(LIB)(xilrwp$(OBJ)) libsmt$(LIB)(xisuper$(OBJ)) libsmt$(LIB)(xiddns$(OBJ)) libsmt$(LIB)(xiimap$(OBJ)) libsmt$(LIB)(smttst1$(OBJ)) libsmt$(LIB)(smttst2$(OBJ)) libsmt$(LIB)(smttst3$(OBJ))
 
 # Force the library to be dependant on its bits.
 #
@@ -214,7 +217,7 @@ upmd$(EXE): upmd$(OBJ) $(LIBRARIES) libsmt$(LIB)
 
 everything: libsmt$(LIB) xitami$(EXE) xixlat$(EXE) echocli$(EXE) echod$(EXE) tsttime$(EXE) tstslot$(EXE) tstrdns$(EXE) upmc$(EXE) upmd$(EXE)
 
-SRCS = smtlog.c smtmsg.c smtecho.c smthttp.c smtoper.c smtsock.c smtslot.c smtsimu.c smtupmd.c smtupmc.c smttran.c smttime.c smtftpc.c smtftpd.c smtlib.c smtrdns.c smthlog.c smtpipe.c smthttpl.c smtftpl.c smtrdnsl.c smtsslm.c xixlogm.c formio.c xixlog.c xiadmin.c xierror.c xixssi.c xixxml.c xilrwp.c xisuper.c xiddns.c xiimap.c smttst1.c smttst2.c smttst3.c xitami.c xixlat.c echocli.c echod.c tsttime.c tstslot.c tstrdns.c upmc.c upmd.c
+SRCS = smtlog.c smtmsg.c smtecho.c smthttp.c smtoper.c smtsock.c smtslot.c smtsimu.c smtupmd.c smtupmc.c smttran.c smttime.c smtftpc.c smtftpd.c smtlib.c smtrdns.c smthlog.c smtpipe.c smthttpl.c smtftpl.c smtrdnsl.c smtsslm.c smtssl.c xixlogm.c formio.c xixlog.c xiadmin.c xierror.c xixssi.c xixxml.c xilrwp.c xisuper.c xiddns.c xiimap.c smttst1.c smttst2.c smttst3.c xitami.c xixlat.c echocli.c echod.c tsttime.c tstslot.c tstrdns.c upmc.c upmd.c
 
 # Build dependencies, using makedepend. 
 #

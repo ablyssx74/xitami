@@ -403,6 +403,12 @@ if test ! -f smtsslm.h; then
     exit
 fi
 
+#-  require smtssl.c
+if test ! -f smtssl.c; then
+    echo smtssl.c missing - aborting
+    exit
+fi
+
 #-  require smtlib.c   smtlib.h
 if test ! -f smtlib.c; then
     echo smtlib.c missing - aborting
@@ -913,6 +919,10 @@ rm smtrdnsl.o
 test $? -ne 0 && exit 1
 ./c -q -r libsmt smtsslm
 rm smtsslm.o
+./c smtssl
+test $? -ne 0 && exit 1
+./c -q -r libsmt smtssl
+rm smtssl.o
 ./c xixlogm
 test $? -ne 0 && exit 1
 ./c -q -r libsmt xixlogm

@@ -233,6 +233,12 @@ main (int argc, char *argv [])
     xixssi_init ();                     /*  Internal SSI processor           */
     xixxml_init ();                     /*  Internal XML processor           */
     smtpipe_init (CONFIG ("server:pipedef"));  /*  Transfer pipe agent       */
+    smtssl_init (                       /*  SSL (HTTPS) agent, if enabled    */
+        *CONFIG ("ssl-http:enabled") == '1',
+        CONFIG ("ssl-http:port"),
+        CONFIG ("ssl-http:cert-file"),
+        CONFIG ("ssl-http:key-file"),
+        CONFIG ("ssl-http:chain-file"));
     smthttp_init (rootdir, cgidir);     /*  HTTP agent, required             */
     smtftpc_init (ftproot);             /*  FTP service agent                */
 
