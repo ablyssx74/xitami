@@ -279,9 +279,20 @@ int smthttp_init (char *p_rootdir,      /*  Document root directory          */
 
     http_init ();                       /*  Initialise HTTP library          */
 
-    /*  Get root and cgi directories passed to smthttp.c                     */
-    rootdir = p_rootdir;
-    cgidir  = p_cgidir;
+    /*  Get root and cgi directories passed to smthttp.c.  Take our own
+     *  copies rather than aliasing the caller's strings: p_rootdir/
+     *  p_cgidir usually come straight from CONFIG("server:webpages")/
+     *  CONFIG("server:cgi-bin"), i.e. they point into the "config"
+     *  symbol table's own storage - and reload_config_if_changed()
+     *  later does sym_empty_table (config) on a live "Restart", which
+     *  frees that storage.  Without our own copies, rootdir/cgidir
+     *  would dangle from that point on (freed memory that happens not
+     *  to have been reused yet keeps reading back correctly, until a
+     *  later allocation reuses it and check_rootdir_exists() starts
+     *  failing with an empty/garbage path - not a fresh failure, the
+     *  pointer had already gone stale on the first reload).            */
+    rootdir = mem_strdup (p_rootdir);
+    cgidir  = mem_strdup (p_cgidir);
 
     /*  Get local host addresses table, which may be NULL                    */
     hostaddrs = get_hostaddrs ();
