@@ -344,8 +344,23 @@
     {   "filename",         "xitami.log"                                     },
 
     { "ssl-http:", NULL                                                      },
+    /*  This fork: off by default (needs a real cert-file/key-file - see
+     *  HTTPS-PORT.md), matching xitami.cfg's own [Ssl-Http] defaults.
+     *  "1" here was the stale Xitami/Pro-era default, kept alongside a
+     *  cert/key/port this schema never defined - that combination made
+     *  the admin UI's "Enable SSL interface?" checkbox show checked
+     *  even on a fresh install where SSL was never actually turned on.  */
+    {   "cert-file",        ""                                               },
+    {   "chain-file",       ""                                               },
     {   "config-file",      "sslhttp.cfs"                                    },
-    {   "enabled",          "1"                                              },
+    {   "enabled",          "0"                                              },
+    {   "key-file",         ""                                               },
+    {   "port",             "443"                                            },
+
+    { "ssl-ftp:", NULL                                                      },
+    /*  This fork, new: off by default - see FTPS-PORT.md. Reuses
+     *  [Ssl-Http]'s cert-file/key-file/chain-file above.               */
+    {   "enabled",          "0"                                              },
 
     { "wsx:", NULL                                                           },
     /*  Preloaded WSX agents                                                 */
