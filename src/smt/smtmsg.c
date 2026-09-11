@@ -3657,14 +3657,15 @@ put_smt_ftpd_putf (
     qbyte start_position,               /*  Start offset for file            */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
     int _size;
 
-    _size = exdr_write (NULL, SMT_FTPD_PUTF, id, passive, filetype, filename, start_position, host_address, port_number, pipe);
+    _size = exdr_write (NULL, SMT_FTPD_PUTF, id, passive, filetype, filename, start_position, host_address, port_number, protected_, pipe);
     *_buffer = mem_alloc (_size);
     if (*_buffer)
-        exdr_write (*_buffer, SMT_FTPD_PUTF, id, passive, filetype, filename, start_position, host_address, port_number, pipe);
+        exdr_write (*_buffer, SMT_FTPD_PUTF, id, passive, filetype, filename, start_position, host_address, port_number, protected_, pipe);
     else
         _size = 0;
     return (_size);
@@ -3697,6 +3698,7 @@ get_smt_ftpd_putf (
                    &(*params)-> start_position,
                    &(*params)-> host_address,
                    &(*params)-> port_number,
+                   &(*params)-> protected_,
                    &(*params)-> pipe));
       }
     else
@@ -3740,13 +3742,14 @@ lsend_ftpd_put_file (QID *_to, QID *_from,
     qbyte start_position,               /*  Start offset for file            */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
     byte *_body;
     int   _size,
           _rc;
 
-    _size = put_smt_ftpd_putf (&_body, id, passive, filetype, filename, start_position, host_address, port_number, pipe);
+    _size = put_smt_ftpd_putf (&_body, id, passive, filetype, filename, start_position, host_address, port_number, protected_, pipe);
     if (_size)
       {
         _rc = event_send (_to, _from, "FTPD_PUT_FILE",
@@ -3779,15 +3782,16 @@ put_smt_ftpd_getf (
     qbyte start_position,               /*  Start offset for file            */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize,                      /*  Max. size, -1 = no limit         */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
     int _size;
 
-    _size = exdr_write (NULL, SMT_FTPD_GETF, id, passive, filetype, filename, start_position, host_address, port_number, maxsize, pipe);
+    _size = exdr_write (NULL, SMT_FTPD_GETF, id, passive, filetype, filename, start_position, host_address, port_number, protected_, maxsize, pipe);
     *_buffer = mem_alloc (_size);
     if (*_buffer)
-        exdr_write (*_buffer, SMT_FTPD_GETF, id, passive, filetype, filename, start_position, host_address, port_number, maxsize, pipe);
+        exdr_write (*_buffer, SMT_FTPD_GETF, id, passive, filetype, filename, start_position, host_address, port_number, protected_, maxsize, pipe);
     else
         _size = 0;
     return (_size);
@@ -3820,6 +3824,7 @@ get_smt_ftpd_getf (
                    &(*params)-> start_position,
                    &(*params)-> host_address,
                    &(*params)-> port_number,
+                   &(*params)-> protected_,
                    &(*params)-> maxsize,
                    &(*params)-> pipe));
       }
@@ -3864,6 +3869,7 @@ lsend_ftpd_get_file (QID *_to, QID *_from,
     qbyte start_position,               /*  Start offset for file            */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize,                      /*  Max. size, -1 = no limit         */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
@@ -3871,7 +3877,7 @@ lsend_ftpd_get_file (QID *_to, QID *_from,
     int   _size,
           _rc;
 
-    _size = put_smt_ftpd_getf (&_body, id, passive, filetype, filename, start_position, host_address, port_number, maxsize, pipe);
+    _size = put_smt_ftpd_getf (&_body, id, passive, filetype, filename, start_position, host_address, port_number, protected_, maxsize, pipe);
     if (_size)
       {
         _rc = event_send (_to, _from, "FTPD_GET_FILE",
@@ -3903,15 +3909,16 @@ put_smt_ftpd_append (
     char *filename,                     /*  Name of file to transfer         */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize,                      /*  Max. size, -1 = no limit         */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
     int _size;
 
-    _size = exdr_write (NULL, SMT_FTPD_APPEND, id, passive, filetype, filename, host_address, port_number, maxsize, pipe);
+    _size = exdr_write (NULL, SMT_FTPD_APPEND, id, passive, filetype, filename, host_address, port_number, protected_, maxsize, pipe);
     *_buffer = mem_alloc (_size);
     if (*_buffer)
-        exdr_write (*_buffer, SMT_FTPD_APPEND, id, passive, filetype, filename, host_address, port_number, maxsize, pipe);
+        exdr_write (*_buffer, SMT_FTPD_APPEND, id, passive, filetype, filename, host_address, port_number, protected_, maxsize, pipe);
     else
         _size = 0;
     return (_size);
@@ -3943,6 +3950,7 @@ get_smt_ftpd_append (
                    &(*params)-> filename,
                    &(*params)-> host_address,
                    &(*params)-> port_number,
+                   &(*params)-> protected_,
                    &(*params)-> maxsize,
                    &(*params)-> pipe));
       }
@@ -3986,6 +3994,7 @@ lsend_ftpd_append_file (QID *_to, QID *_from,
     char *filename,                     /*  Name of file to transfer         */
     qbyte host_address,                 /*  IP address for host              */
     dbyte port_number,                  /*  Port on remote host              */
+    dbyte protected_,                   /*  0/1 = wrap data conn. in TLS     */
     qbyte maxsize,                      /*  Max. size, -1 = no limit         */
     char *pipe)                         /*  Transfer pipe, if any            */
 {
@@ -3993,7 +4002,7 @@ lsend_ftpd_append_file (QID *_to, QID *_from,
     int   _size,
           _rc;
 
-    _size = put_smt_ftpd_append (&_body, id, passive, filetype, filename, host_address, port_number, maxsize, pipe);
+    _size = put_smt_ftpd_append (&_body, id, passive, filetype, filename, host_address, port_number, protected_, maxsize, pipe);
     if (_size)
       {
         _rc = event_send (_to, _from, "FTPD_APPEND_FILE",

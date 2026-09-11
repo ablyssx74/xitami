@@ -48,9 +48,13 @@ int  smtftpc_init    (char *root);      /*  FTP control agent                */
 int  smtftpd_init    (void);            /*  FTP data agent                   */
 int  smtrdns_init    (void);            /*  Reverse DNS agent                */
 int  smtpipe_init    (char *pipefile);  /*  Transfer pipe agent              */
-int  smtssl_init     (Bool enabled, char *port, char *cert_file,
-                       char *key_file, char *chain_file);
-                                        /*  SSL (HTTPS) agent                */
+int  smtssl_init     (Bool https_enabled, Bool ftps_enabled, char *port,
+                       char *cert_file, char *key_file, char *chain_file);
+                                        /*  SSL (HTTPS/FTPS) agent           */
+Bool smtssl_ready    (void);            /*  Is a cert/key loaded and ready?  */
+int  smtssl_wrap_socket (sock_t handle, QID *reply_to);
+                                        /*  Upgrade an existing connection   */
+                                        /*  (FTP control/data) to TLS        */
 
 #ifdef __cplusplus
 }
