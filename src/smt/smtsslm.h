@@ -412,5 +412,82 @@ int lsend_ssl_put_slice_ok (QID *_to, QID *_from,
                               size)
 
 
+/*  SSL_GET_SLICE / SSL_GET_SLICE_OK - hand-added for this fork, not part
+ *  of the original iMatix smtsslm generated message set.  These mirror
+ *  SSL_PUT_SLICE/SSL_PUT_SLICE_OK above exactly (same shape, same
+ *  put/get/free/lsend/declare/send pattern) but for the opposite
+ *  direction: "read from the SSL socket until the peer closes it, writing
+ *  everything received into a file" - the FTPS upload (STOR/APPE)
+ *  counterpart to the existing FTPS/HTTPS download slice-send path.      */
+
+#define SSL_GET_SLICE "sdq"
+
+typedef struct {
+    char *filename;                     /*  Name of file to receive into     */
+    dbyte append;                       /*  TRUE: append (APPE); FALSE: STOR */
+    qbyte maxsize;                      /*  Max. bytes to accept; 0 = no cap */
+} struct_ssl_get_slice;
+
+
+int  get_ssl_get_slice       (byte *_buffer, struct_ssl_get_slice **params);
+void free_ssl_get_slice      (struct_ssl_get_slice **params);
+int  put_ssl_get_slice       (byte **_buffer, char *filename, dbyte append, qbyte maxsize);
+
+#define declare_ssl_get_slice(_event, _priority)                             \
+    method_declare (agent, "SSL_GET_SLICE", _event, _priority)
+
+/*  Send event - Receive SSL data into a file                                */
+
+int lsend_ssl_get_slice (QID *_to, QID *_from,
+        char *_accept,
+        char *_reject,
+        char *_expire,
+        word _timeout,
+        char *filename,                 /*  Name of file to receive into     */
+        dbyte append,                   /*  TRUE: append (APPE); FALSE: STOR */
+        qbyte maxsize);                 /*  Max. bytes to accept; 0 = no cap */
+
+#define send_ssl_get_slice(_to,                                              \
+                           filename,                                         \
+                           append,                                           \
+                           maxsize)                                          \
+       lsend_ssl_get_slice(_to,                                              \
+                           &thread-> queue-> qid,                            \
+                           NULL, NULL, NULL, 0,                              \
+                           filename,                                         \
+                           append,                                           \
+                           maxsize)
+
+
+#define SSL_GET_SLICE_OK "q"
+
+typedef struct {
+    qbyte size;                         /*  Amount of received data          */
+} struct_ssl_get_slice_ok;
+
+
+int  get_ssl_get_slice_ok    (byte *_buffer, struct_ssl_get_slice_ok **params);
+void free_ssl_get_slice_ok   (struct_ssl_get_slice_ok **params);
+int  put_ssl_get_slice_ok    (byte **_buffer, qbyte size);
+
+#define declare_ssl_get_slice_ok(_event, _priority)                          \
+    method_declare (agent, "SSL_GET_SLICE_OK", _event, _priority)
+
+/*  Send event - File received okay                                          */
+
+int lsend_ssl_get_slice_ok (QID *_to, QID *_from,
+        char *_accept,
+        char *_reject,
+        char *_expire,
+        word _timeout,
+        qbyte size);                    /*  Amount of received data          */
+
+#define send_ssl_get_slice_ok(_to,                                           \
+                              size)                                          \
+       lsend_ssl_get_slice_ok(_to,                                           \
+                              &thread-> queue-> qid,                         \
+                              NULL, NULL, NULL, 0,                           \
+                              size)
+
 
 #endif                                  /*  Included                         */
