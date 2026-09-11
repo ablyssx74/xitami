@@ -39,6 +39,14 @@ rm -f $TOPDIR/xitami $TOPDIR/gslgen
 rm -f $CGISRC/testcgi $CGISRC/testcgi?
 rm -f $TOPDIR/cgi-bin/testcgi $TOPDIR/cgi-bin/testcgi?
 
+#  xibuild's final step runs xiconfig, which asks for an Admin username/
+#  password and writes them into defaults.cfg/defaults.aut - and refuses to
+#  run again ("Delete defaults.cfg and run xiconfig again") as long as
+#  defaults.cfg still exists.  Remove both so the next ./xibuild prompts
+#  for fresh credentials instead of silently leaving old ones in place.
+echo "xiclean: removing defaults.cfg/defaults.aut from xiconfig..."
+rm -f $TOPDIR/defaults.cfg $TOPDIR/defaults.aut
+
 if [ "$1" = "runtime" ]; then
     echo "xiclean: removing runtime files from test runs..."
     rm -f $TOPDIR/logs/console.log $TOPDIR/logs/xitami.log
