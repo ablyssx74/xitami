@@ -324,6 +324,7 @@ static FIELDREF
       { XIADM16_USER_AT_HOST,   "user-at-host",      XIADM16_L_USER_AT_HOST  },
       { XIADM16_WEBMASK,        "webmask",           XIADM16_L_WEBMASK       },
       { XIADM16_WELCOME,        "welcome",           XIADM16_L_WELCOME       },
+      { XIADM16_SSL_FTP_ENABLED, "ssl-ftp:enabled",  XIADM16_L_SSL_FTP_ENABLED },
       { 0, NULL, 0                                                           }
     },
     console_fields [] = {
@@ -384,6 +385,7 @@ static FIELDREF
       { XIADM31_SSL_CERTFILE,  "ssl-http:cert-file",  XIADM31_L_SSL_CERTFILE  },
       { XIADM31_SSL_KEYFILE,   "ssl-http:key-file",   XIADM31_L_SSL_KEYFILE   },
       { XIADM31_SSL_CHAINFILE, "ssl-http:chain-file", XIADM31_L_SSL_CHAINFILE },
+      { XIADM31_SSL_FTP_ENABLED, "ssl-ftp:enabled",   XIADM31_L_SSL_FTP_ENABLED },
       { 0, NULL, 0                                                           }
     };
 
