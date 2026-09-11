@@ -43,6 +43,14 @@
 #include "smtdefn.h"                    /*  SMT definitions                  */
 #include "smtsslm.h"                    /*  SMT SSL message functions        */
 
+/*  sfl.h's "#define local static void" (a shorthand this file never uses)
+ *  collides with some OpenSSL builds: <openssl/bio.h>, pulled in by
+ *  <openssl/ssl.h> below, declares BIO_ADDR parameters literally named
+ *  "local" (e.g. "const BIO_ADDR *local"), which the preprocessor then
+ *  mangles into "const BIO_ADDR *static void" - breaking the parse.
+ *  Undefine it first; nothing in this file needs it.                      */
+#undef  local
+
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
