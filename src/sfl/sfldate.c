@@ -906,20 +906,25 @@ gmt_to_local (long gmt_date, long gmt_time, long *date, long *time)
 struct tm
 *safe_localtime (const time_t *time_secs)
 {
-    qbyte
+    time_t
         adjusted_time;
     struct tm
         *time_struct;
     int
         adjust_years = 0;
 
-    adjusted_time = (qbyte) *time_secs;
-    while (adjusted_time > LONG_MAX)
+    adjusted_time = *time_secs;
+#if (defined (__IS_32BIT__))
+    /*  Only 32-bit time_t can run into the year-2038 problem; on 64-bit
+     *  systems this loop would never trigger anyway (time_t doesn't wrap
+     *  until the far future), so it's skipped entirely there.               */
+    while ((qbyte) adjusted_time > LONG_MAX)
       {
         adjust_years  += 20;
         adjusted_time -= 631152000;     /*  Number of seconds in 20 years    */
       }
-    time_struct = localtime ((const time_t *) &adjusted_time);
+#endif
+    time_struct = localtime (&adjusted_time);
     ASSERT (time_struct);               /*  MUST be valid now...             */
     time_struct-> tm_year += adjust_years;
 
@@ -937,20 +942,24 @@ struct tm
 struct tm
 *safe_gmtime (const time_t *time_secs)
 {
-    qbyte
+    time_t
         adjusted_time;
     struct tm
         *time_struct;
     int
         adjust_years = 0;
 
-    adjusted_time = (qbyte) *time_secs;
-    while (adjusted_time > LONG_MAX)
+    adjusted_time = *time_secs;
+#if (defined (__IS_32BIT__))
+    /*  See safe_localtime() - this workaround only applies to 32-bit        */
+    /*  time_t; on 64-bit systems it would never trigger anyway.             */
+    while ((qbyte) adjusted_time > LONG_MAX)
       {
         adjust_years  += 20;
         adjusted_time -= 631152000;     /*  Nbr seconds in 20 years          */
       }
-    time_struct = gmtime ((const time_t *) &adjusted_time);
+#endif
+    time_struct = gmtime (&adjusted_time);
     if (time_struct)                    /*  gmtime may be unimplemented      */
         time_struct-> tm_year += adjust_years;
 
