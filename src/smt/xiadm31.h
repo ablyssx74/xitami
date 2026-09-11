@@ -51,6 +51,19 @@
 #define XIADM31_L_MAPPED_URI                34
 #define XIADM31_MAPPED_URI                  35
 
+/*  New in this fork: HTTPS/SSL settings (port, cert/key/chain files),
+ *  appended after the last fxgen-generated field to avoid renumbering
+ *  any of the above. See ssl-http:port/cert-file/key-file/chain-file
+ *  in xitami.cfg and HTTPS-PORT.md.                                    */
+#define XIADM31_L_SSL_PORT                  36
+#define XIADM31_SSL_PORT                    37
+#define XIADM31_L_SSL_CERTFILE              38
+#define XIADM31_SSL_CERTFILE                39
+#define XIADM31_L_SSL_KEYFILE               40
+#define XIADM31_SSL_KEYFILE                 41
+#define XIADM31_L_SSL_CHAINFILE             42
+#define XIADM31_SSL_CHAINFILE               43
+
 /*  This table contains each block in the form                               */
 
 static byte xiadm31_blocks [] = {
@@ -464,9 +477,9 @@ static byte xiadm31_blocks [] = {
     /*  !--FIELD BOOLEAN f488 NAME=s ... d TRUE=yes FALSE=no VALUE=0         */
     0, 17, 15, 0, 1, 'f', '4', '8', '8', 0, '0', 0, 'y', 'e', 's', 0,
     'n', 'o', 0,
-    /*  Xitami/Pro only                                                      */
-    0, 17, 0, 'X', 'i', 't', 'a', 'm', 'i', '/', 'P', 'r', 'o', 32, 'o',
-    'n', 'l', 'y', 10,
+    /*  OpenSSL-powered (this fork; see rows below to configure)             */
+    0, 17, 0, 'O', 'p', 'e', 'n', 'S', 'S', 'L', 45, 'p', 'o', 'w', 'e',
+    'r', 'e', 'd', 10,
     /*  </TD></TR>                                                           */
     0, 4, 1, 0, 8, 's',
     /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
@@ -515,6 +528,93 @@ static byte xiadm31_blocks [] = {
     0, 14, 10, 6, 1, 0, 0, '2', 0, '2', 'f', '4', '9', '4', 0, 0,
     /*  </TD></TR>                                                           */
     0, 4, 1, 0, 8, 's',
+
+    /*  ------------------------------------------------------------------
+     *  New in this fork: HTTPS/SSL settings.  Hand-written (not fxgen-
+     *  generated - see the Prolog comment at the top of this file), using
+     *  plain BLOCK_PLAIN (uncompressed) blocks for the literal HTML
+     *  instead of fxgen's dictionary-compressed BLOCK_COMPRESSED, and
+     *  BLOCK_TEXTUAL/BLOCK_NUMERIC field blocks exactly as decoded from
+     *  formio.c's TEXTUAL_xxx()/NUMERIC_xxx() macros. Appended here,
+     *  after the last existing field and before the closing </TABLE>,
+     *  so none of the fields above need renumbering.
+     *  ------------------------------------------------------------------*/
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I', 'G',
+    'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I', 'G', 'N', '=',
+    'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R', 'A', 'P', '>', 10,
+    /*  !--LABEL l_ssl_port: "HTTPS port:&nbsp;&nbsp;"                       */
+    0, 41, 10, 6, 1, 0, 0, 23, 0, 23, 'l', 's', 's', 'l', 'p', 'o', 'r',
+    't', 0, 'H', 'T', 'T', 'P', 'S', 32, 'p', 'o', 'r', 't', ':', '&', 'n',
+    'b', 's', 'p', ';', '&', 'n', 'b', 's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, 34, 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I', 'D', 'T', 'H', '=',
+    '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD ssl_port: NUMERIC size=5 max=5 (shifted by server:portbase) */
+    0, 22, 11, 0, 1, 0, 5, 0, 5, 0, 0, 0, 0, 0, 0, 's', 's', 'l', 'p', 'o',
+    'r', 't', 0, 0,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I', 'G',
+    'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I', 'G', 'N', '=',
+    'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R', 'A', 'P', '>', 10,
+    /*  !--LABEL l_ssl_certfile: "SSL certificate (or chain) file:..."       */
+    0, 62, 10, 6, 1, 0, 0, 44, 0, 44, 'l', 's', 's', 'l', 'c', 'e', 'r',
+    't', 0, 'S', 'S', 'L', 32, 'c', 'e', 'r', 't', 'i', 'f', 'i', 'c', 'a',
+    't', 'e', 32, '(', 'o', 'r', 32, 'c', 'h', 'a', 'i', 'n', ')', 32,
+    'f', 'i', 'l', 'e', ':', '&', 'n', 'b', 's', 'p', ';', '&', 'n', 'b',
+    's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, 34, 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I', 'D', 'T', 'H', '=',
+    '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD ssl_certfile: TEXTUAL size=60 max=128                       */
+    0, 17, 10, 0, 1, 0, 0, 60, 0, 128, 's', 's', 'l', 'c', 'e', 'r', 't', 0,
+    0,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I', 'G',
+    'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I', 'G', 'N', '=',
+    'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R', 'A', 'P', '>', 10,
+    /*  !--LABEL l_ssl_keyfile: "SSL private key file:&nbsp;&nbsp;"          */
+    0, 50, 10, 6, 1, 0, 0, 33, 0, 33, 'l', 's', 's', 'l', 'k', 'e', 'y',
+    0, 'S', 'S', 'L', 32, 'p', 'r', 'i', 'v', 'a', 't', 'e', 32, 'k', 'e',
+    'y', 32, 'f', 'i', 'l', 'e', ':', '&', 'n', 'b', 's', 'p', ';', '&',
+    'n', 'b', 's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, 34, 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I', 'D', 'T', 'H', '=',
+    '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD ssl_keyfile: TEXTUAL size=60 max=128                        */
+    0, 16, 10, 0, 1, 0, 0, 60, 0, 128, 's', 's', 'l', 'k', 'e', 'y', 0, 0,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
+
+    /*  <TR><TD ALIGN=LEFT VALIGN=TOP NOWRAP>                                */
+    0, 39, 0, '<', 'T', 'R', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I', 'G',
+    'N', '=', 'L', 'E', 'F', 'T', ' ', 'V', 'A', 'L', 'I', 'G', 'N', '=',
+    'T', 'O', 'P', ' ', 'N', 'O', 'W', 'R', 'A', 'P', '>', 10,
+    /*  !--LABEL l_ssl_chainfile: "SSL chain file (optional):&nbsp;&nbsp;"   */
+    0, 57, 10, 6, 1, 0, 0, 38, 0, 38, 'l', 's', 's', 'l', 'c', 'h', 'a',
+    'i', 'n', 0, 'S', 'S', 'L', 32, 'c', 'h', 'a', 'i', 'n', 32, 'f', 'i',
+    'l', 'e', 32, '(', 'o', 'p', 't', 'i', 'o', 'n', 'a', 'l', ')', ':',
+    '&', 'n', 'b', 's', 'p', ';', '&', 'n', 'b', 's', 'p', ';', 0,
+    /*  </TD><TD ALIGN=LEFT WIDTH="80%">                                     */
+    0, 34, 0, '<', '/', 'T', 'D', '>', '<', 'T', 'D', ' ', 'A', 'L', 'I',
+    'G', 'N', '=', 'L', 'E', 'F', 'T', ' ', 'W', 'I', 'D', 'T', 'H', '=',
+    '"', '8', '0', '%', '"', '>', 10,
+    /*  !--FIELD ssl_chainfile: TEXTUAL size=60 max=128                      */
+    0, 18, 10, 0, 1, 0, 0, 60, 0, 128, 's', 's', 'l', 'c', 'h', 'a', 'i',
+    'n', 0, 0,
+    /*  </TD></TR>                                                           */
+    0, 12, 0, '<', '/', 'T', 'D', '>', '<', '/', 'T', 'R', '>', 10,
+
     /*  </TABLE>                                                             */
     0, 4, 1, 0, 6, 186,
     /*  </FORM>                                                              */
@@ -607,7 +707,16 @@ static FIELD_DEFN xiadm31_fields [] = {
     { 1291, 3569, 50 },                 /*  test_uri                        */
     { 1343, 3623, 30 },                 /*  l_mapped_uri                    */
     { 1375, 3675, 50 },                 /*  mapped_uri                      */
-    { 1427, 0, 0 },                     /*  -- sentinel --                  */
+    /*  New in this fork - see the XIADM31_L_SSL_PORT etc. #defines above  */
+    { 1427, 3738, 23 },                 /*  l_ssl_port                      */
+    { 1452, 3817, 5 },                  /*  ssl_port                        */
+    { 1459, 3896, 44 },                 /*  l_ssl_certfile                  */
+    { 1505, 3996, 128 },                /*  ssl_certfile                    */
+    { 1635, 4070, 33 },                 /*  l_ssl_keyfile                   */
+    { 1670, 4158, 128 },                /*  ssl_keyfile                     */
+    { 1800, 4231, 38 },                 /*  l_ssl_chainfile                 */
+    { 1840, 4326, 128 },                /*  ssl_chainfile                   */
+    { 1970, 0, 0 },                     /*  -- sentinel --                  */
     };
 
 /*  The data of a form is a list of attributes and fields                    */
@@ -685,6 +794,23 @@ typedef struct {
     char   l_mapped_uri         [30 + 1];
     byte   mapped_uri_a         ;
     char   mapped_uri           [50 + 1];
+    /*  New in this fork                                                    */
+    byte   l_ssl_port_a         ;
+    char   l_ssl_port           [23 + 1];
+    byte   ssl_port_a           ;
+    char   ssl_port             [5 + 1];
+    byte   l_ssl_certfile_a     ;
+    char   l_ssl_certfile       [44 + 1];
+    byte   ssl_certfile_a       ;
+    char   ssl_certfile         [128 + 1];
+    byte   l_ssl_keyfile_a      ;
+    char   l_ssl_keyfile        [33 + 1];
+    byte   ssl_keyfile_a        ;
+    char   ssl_keyfile          [128 + 1];
+    byte   l_ssl_chainfile_a    ;
+    char   l_ssl_chainfile      [38 + 1];
+    byte   ssl_chainfile_a      ;
+    char   ssl_chainfile        [128 + 1];
     byte   back_a;
     byte   save_a;
     byte   default_a;
@@ -703,10 +829,10 @@ typedef struct {
 static FORM_DEFN form_xiadm31 = {
     xiadm31_blocks,
     xiadm31_fields,
-    147,                                /*  Number of blocks in form        */
-    36,                                 /*  Number of fields in form        */
+    167,                                /*  Number of blocks in form        */
+    44,                                 /*  Number of fields in form        */
     11,                                 /*  Number of actions in form       */
-    1427,                               /*  Size of fields                  */
+    1970,                               /*  Size of fields                  */
     "xiadm31",                          /*  Name of form                    */
     };
 

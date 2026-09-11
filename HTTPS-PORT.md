@@ -42,6 +42,18 @@ scripts.
 
 ## Configuring HTTPS
 
+### Via the web-based admin UI
+
+The Advanced settings page (Configuration → Advanced in the admin UI) has
+an "HTTPS port", "SSL certificate (or chain) file", "SSL private key
+file" and "SSL chain file (optional)" row, right below the existing
+"Enable SSL interface?" checkbox (that checkbox's old "Xitami/Pro only"
+note has been updated, since SSL is now genuinely implemented in this
+fork). Fill these in the same way as the `xitami.cfg` fields described
+below, then Save and Restart as usual.
+
+### Via xitami.cfg directly
+
 Edit the `[Ssl-Http]` section of `xitami.cfg`:
 
 ```
