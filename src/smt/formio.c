@@ -18,6 +18,24 @@
 #include "sfl.h"                        /*  SFL library prototypes           */
 #include "formio.h"                     /*  Form i/o functions & defines     */
 
+/*  va_copy() is C99; some compilers this code still needs to build on
+ *  (e.g. Haiku's legacy gcc2, kept around for 32-bit x86 BeOS-ABI
+ *  compatibility) predate it and don't declare it in <stdarg.h>, giving
+ *  a link error in form_exec() below. Fall back to the older GNU
+ *  __va_copy() when available, and to plain assignment otherwise - the
+ *  latter is exactly the copy-by-value behaviour this code already
+ *  relied on before va_copy() was introduced here (see the comment in
+ *  form_exec()), and remains correct on any ABI where va_list is a
+ *  plain value type rather than an opaque pointer/array (the 32-bit
+ *  x86 ABIs this predates va_copy() everywhere else in the code).       */
+#ifndef va_copy
+#ifdef  __va_copy
+#define va_copy(dst, src)  __va_copy ((dst), (src))
+#else
+#define va_copy(dst, src)  ((dst) = (src))
+#endif
+#endif
+
 
 /*  Global variables                                                         */
 
